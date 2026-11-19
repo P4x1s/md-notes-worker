@@ -24,17 +24,21 @@
 | --- | --- |
 | ![登录页](ui-final-auth.png) | ![浅色预览](ui-final-light-preview.png) |
 | ![分屏模式](ui-final-split.png) | ![深色预览](ui-final-dark-preview.png) |
-| ![深色分屏](ui-final-dark-split.png) | |
+| ![深色分屏](ui-final-dark-split.png) | ![偏好设置](ui-final-settings.png) |
+| ![设置 · 代码面板](ui-final-settings-code.png) | ![设置 · 关于](ui-final-settings-about.png) |
 
 ## 2. 已实现功能
 
 | 类别 | 内容 |
 | --- | --- |
-| 账号 | 单用户登录（凭证来自 Worker 变量/密钥）、退出（服务端吊销会话）、刷新保持登录 |
+| 账号 | 单用户登录（凭证来自 Worker 变量/密钥）、底部自定义显示名（内联编辑，`PUT /api/auth/profile`）、退出（服务端吊销会话）、刷新保持登录 |
 | 笔记 | 列表（标题/摘要/更新时间）、搜索标题与摘要、打开任意记录、新建、编辑、删除 |
 | 编辑 | 标题输入、编辑/预览/分屏实时预览、代码块一键复制、导出 `.md` 文件 |
+| 高亮 | highlight.js 191 种语言、随主题切换双配色（浅 GitHub / 深 One Dark）、代码块语言标签、可选行号列 |
+| 补全 | Typora 式代码语言自动补全：围栏行输入即弹候选，↑↓/Enter/Esc/鼠标选择，自动配对闭合围栏 |
+| 偏好设置 | Typora 风格设置弹窗（Ctrl + ,）：主题模式、显示/隐藏菜单栏、正文字体/字号/行距、代码字体/字号、行号/语言标签/复制按钮/活动行高亮，全部实时生效并持久化 |
 | 保存 | 800ms 防抖自动保存、Ctrl+S 立即保存、状态提示、失败可重试、离开页提醒 |
-| 界面 | Typora 风格：窄侧栏、居中纸张、精细 Markdown 排版、浅色/深色主题、侧栏收起、当前行高亮、字数与行数 |
+| 界面 | Typora 风格：窄侧栏、居中纸张、精细 Markdown 排版、浅色/深色主题 + 按时段自动切换、侧栏收起、当前行高亮、字数与行数 |
 | 持久化 | Cloudflare D1（SQLite），按 `user_id` 强制隔离 |
 | 安全 | Turnstile 人机验证、签名会话 + 服务端登记、输入校验、XSS 防护、CSP、限流、统一错误处理 |
 
@@ -50,13 +54,17 @@ md-notes-worker/
 │   ├── ratelimit.js    # KV 固定窗口限流
 │   └── http.js         # JSON 响应、Cookie 解析与写入、客户端 IP
 ├── public/
-│   ├── index.html      # SPA 页面骨架
-│   ├── app.js          # 鉴权/列表/搜索/自动保存/预览/分屏/导出
-│   ├── style.css       # Typora 风格主题
+│   ├── index.html      # SPA 页面骨架（含偏好设置弹窗）
+│   ├── app.js          # 鉴权/列表/搜索/自动保存/预览/分屏/导出/偏好设置/代码高亮/语言补全
+│   ├── style.css       # Typora 风格主题（双主题高亮配色、字体变量体系、设置弹窗）
 │   └── vendor/         # 本地化依赖，配合严格 CSP，不依赖 CDN
 │       ├── marked.min.js
-│       └── purify.min.js
-├── scripts/smoke-test.sh   # 本地端到端验证脚本
+│       ├── purify.min.js
+│       ├── highlight.min.js     # highlight.js 10.7.3 主包（39 常用语言）
+│       └── hljs-extra.min.js    # 扩展 152 种语言（合计 191 种）
+├── scripts/
+│   ├── smoke-test.sh   # 本地端到端验证脚本（45 项断言）
+│   └── github-sync.py  # Git Data API 仓库镜像同步
 ├── schema.sql          # D1 表结构
 ├── wrangler.toml       # D1 / KV / Assets 绑定
 ├── package.json
@@ -73,6 +81,7 @@ users (
   id INTEGER PRIMARY KEY,
   username TEXT UNIQUE,          -- 3-32 位字母数字下划线
   password_hash TEXT,            -- pbkdf2$迭代次数$salt$hash
+  display_name TEXT,             -- 界面显示名（可自定义，不影响登录凭证）
   created_at INTEGER
 )
 
@@ -106,7 +115,8 @@ CREATE INDEX idx_sessions_user ON sessions(user_id);
 | POST | `/api/auth/login` | 登录（凭证与 `ADMIN_USERNAME` / `ADMIN_PASSWORD` 常量时间比对） |
 | POST | `/api/auth/login` | 登录，下发会话 Cookie 并登记会话 |
 | POST | `/api/auth/logout` | 删除服务端会话登记并清除 Cookie，旧 Cookie 立即失效 |
-| GET | `/api/auth/me` | 恢复当前登录态 |
+| GET | `/api/auth/me` | 恢复当前登录态（含 display_name） |
+| PUT | `/api/auth/profile` | 修改自定义显示名（1-32 字符，去首尾空白，禁控制字符） |
 | GET | `/api/notes` | 当前用户笔记摘要列表 |
 | POST | `/api/notes` | 新建笔记 |
 | GET | `/api/notes/:id` | 读取单条笔记 |
@@ -204,13 +214,17 @@ npm run dev
 
 当前刻意不做：邮件验证/密码找回、细粒度角色、版本历史、附件上传、精确限流（Durable Objects）、完整行内所见即所得编辑。
 
-已完成的迭代项：会话服务端吊销、笔记搜索、分屏实时预览、Markdown 导出、代码块复制。
+已完成的迭代项：会话服务端吊销、笔记搜索、分屏实时预览、Markdown 导出、代码块复制、底部自定义显示名、191 语言代码高亮、Typora 式语言自动补全、按时段自动深浅色、偏好设置弹窗（菜单栏显隐/字体/行号/语言标签等）。
 
 按优先级建议继续：Turnstile 接入登录 → 版本历史与回收站 → 富文本行内编辑。
 
 ## 10. 界面说明（Typora 风格）
 
-视觉参照 Typora：左侧 258px 文件栏（选中项左侧蓝线）、顶部搜索框、中间最大 880px 的居中纸张、34px 大标题与细分割线、标题下划线、引用块灰底竖线、代码块浅底圆角、底部 30px 状态栏。默认浅色纸张，右上角「深色/浅色」一键切换并写入 `localStorage`；「侧栏」按钮可收起文件栏进入专注书写。
+视觉参照 Typora：左侧 258px 文件栏（选中项左侧蓝线）、顶部搜索框、中间最大 880px 的居中纸张、34px 大标题与细分割线、标题下划线、引用块灰底竖线、代码块浅底圆角、底部 30px 状态栏。默认浅色纸张，右上角主题按钮三态循环「自动 → 浅色 → 深色」，「自动」按时段切换（19:00–次日 07:00 深色）并每分钟复查；「侧栏」按钮可收起文件栏进入专注书写。
+
+**偏好设置**（右上角「设置」按钮或 `Ctrl + ,`）：左导航 + 右面板，外观（主题模式、显示/隐藏菜单栏、当前行高亮）、字体（正文无衬线/衬线/系统、字号 15-18、行距）、代码（Cascadia/Consolas/JetBrains/经典、字号 13-16、行号、语言标签、复制按钮）、关于。所有设置实时生效并写入 `localStorage`，提供「恢复默认」。
+
+**代码显示**：highlight.js 10.7.3 全量 191 种语言本地 vendor 化；浅色 GitHub 配色、深色 One Dark 配色随主题切换；代码块 8px 圆角 + 语言标签芯片；行内代码主题色着色。
 
 模式：编辑（源码 + 当前行高亮）、预览（Typora 式排版）、分屏（两者并排，输入即刷新）。完整行内所见即所需维护光标与富文本块的双向映射，风险高于收益，故未采用。
 
@@ -218,8 +232,8 @@ npm run dev
 
 本地已实际运行验证：
 
-- `bash scripts/smoke-test.sh`：单用户模式 24 项全部通过，覆盖 D1 初始化、登录成功/失败路径、注册端点移除（404）、未登录 401、新建、编辑持久化、删除、静态资源、Cookie 属性、CSP，以及登出后旧 Cookie 失效、另一会话不受影响。
-- 无头 Edge 端到端：登录、两篇笔记、搜索过滤（2 条→1 条）、分屏布局、代码块复制按钮、导出按钮、主题切换、字数/行数统计均验证通过；界面截图见上方「成品预览」（编辑器各模式截图与当前界面一致，登录页截图为当前单用户版）。
+- `bash scripts/smoke-test.sh`：单用户模式 45 项全部通过，覆盖 D1 初始化、登录成功/失败路径、注册端点移除（404）、未登录 401、新建、编辑持久化、删除、自定义显示名（401/400/200/持久化）、静态资源（含高亮脚本与设置弹窗元素）、Cookie 属性、CSP，以及登出后旧 Cookie 失效、另一会话不受影响。
+- 无头 Edge 端到端：登录态、预览高亮、底部层叠显示名、语言补全弹窗（过滤/键盘选择/自动闭合围栏/Esc 关闭/非围栏行不弹）、偏好设置全流程（面板切换、字号/行号/语言标签/菜单栏显隐实时生效、localStorage 持久化、主题 seg 联动、恢复默认）共 18 项断言通过；界面截图见上方「成品预览」。
 - Markdown 消毒：`<script>` / `onerror` / `javascript:` URL 均被清除，脚本未执行，标题正常渲染（`PWNED=0|SCRIPT=0|ONERROR=0|JSURL=0|H1=1`）。
 
 验证过程中发现并修复两个真实缺陷：`ratelimit.js` 中 `count` 变量作用域错误导致登录 500；分屏模式遗漏切换布局 class 导致并排布局未生效。

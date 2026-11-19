@@ -20,6 +20,8 @@
     logoutBtn: $('logoutBtn'), emptyState: $('emptyState'),
     docCrumb: $('docCrumb'), sidebarToggle: $('sidebarToggle'),
     themeToggle: $('themeToggle'),
+    settingsBtn: $('settingsBtn'), settingsOverlay: $('settingsOverlay'),
+    settingsReset: $('settingsReset'), settingsClose: $('settingsClose'),
     editorPane: $('editorPane'), noteTitle: $('noteTitle'),
     noteContent: $('noteContent'), activeLine: $('activeLine'),
     preview: $('preview'), splitPreview: $('splitPreview'),
@@ -59,26 +61,153 @@
     var hour = new Date().getHours();
     return (hour >= 19 || hour < 7) ? 'dark' : 'light';
   }
+  function setThemePref(pref) {
+    if (pref !== 'auto' && pref !== 'light' && pref !== 'dark') pref = 'auto';
+    themePref = pref;
+    applyTheme();
+  }
   function applyTheme() {
     var resolved = themePref === 'auto' ? autoTheme() : themePref;
     document.documentElement.dataset.theme = resolved;
     els.themeToggle.textContent = themePref === 'auto' ? '自动' : (resolved === 'light' ? '浅色' : '深色');
     els.themeToggle.dataset.mode = themePref;
     try { localStorage.setItem(THEME_KEY, themePref); } catch (ignore) { /* 隐私模式下忽略 */ }
+    syncSettingsControls();
   }
   try { themePref = localStorage.getItem(THEME_KEY) || 'auto'; } catch (ignore) { themePref = 'auto'; }
   if (themePref !== 'auto' && themePref !== 'light' && themePref !== 'dark') themePref = 'auto';
   applyTheme();
   els.themeToggle.addEventListener('click', function () {
-    themePref = themePref === 'auto' ? 'light' : (themePref === 'light' ? 'dark' : 'auto');
-    applyTheme();
+    setThemePref(themePref === 'auto' ? 'light' : (themePref === 'light' ? 'dark' : 'auto'));
   });
   setInterval(function () {
     if (themePref === 'auto') applyTheme();
   }, 60000);
-  els.sidebarToggle.addEventListener('click', function () {
-    els.appShell.classList.toggle('sidebar-collapsed');
+
+  // ---------- 偏好设置（Typora 风格） ----------
+  var SETTINGS_KEY = 'mdnotes-settings';
+  var DEFAULT_SETTINGS = {
+    sidebar: 'visible', activeLine: true,
+    bodyFont: 'sans', bodySize: 16, bodyLine: 1.8,
+    codeFont: 'cascadia', codeSize: 14,
+    lineNumbers: false, langLabel: true, copyButton: true
+  };
+  var settings = loadSettings();
+
+  function loadSettings() {
+    var base = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+    try {
+      var raw = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+      if (raw && typeof raw === 'object') {
+        for (var key in base) {
+          if (key in raw) base[key] = raw[key];
+        }
+      }
+    } catch (ignore) { /* 解析失败按默认处理 */ }
+    return base;
+  }
+
+  function saveSettings() {
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (ignore) { /* 隐私模式下忽略 */ }
+  }
+
+  function applySettings() {
+    var root = document.documentElement;
+    root.dataset.bodyFont = settings.bodyFont;
+    root.dataset.codeFont = settings.codeFont;
+    root.style.setProperty('--body-size', String(settings.bodySize));
+    root.style.setProperty('--body-line', String(settings.bodyLine));
+    root.style.setProperty('--code-size', String(settings.codeSize));
+    els.appShell.classList.toggle('sidebar-collapsed', settings.sidebar === 'hidden');
+    if (!settings.activeLine || els.noteContent.hidden) els.activeLine.hidden = true;
+    // 行号 / 语言标签 / 复制按钮变动需要重建预览 DOM（两个容器都重建，与可见性无关）
+    if (state.current) {
+      renderMarkdown(els.preview);
+      renderMarkdown(els.splitPreview);
+    }
+    syncSettingsControls();
+  }
+
+  function syncSettingsControls() {
+    if (!settings) return; // 初始化早期 settings 尚未就绪
+    Array.prototype.forEach.call(document.querySelectorAll('.seg-group'), function (group) {
+      var key = group.dataset.seg;
+      var current = String(key === 'theme' ? themePref : settings[key]);
+      Array.prototype.forEach.call(group.querySelectorAll('.seg'), function (btn) {
+        btn.classList.toggle('active', btn.dataset.value === current);
+      });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-check]'), function (input) {
+      var key = input.dataset.check;
+      if (key === 'sidebarVisible') input.checked = settings.sidebar === 'visible';
+      else input.checked = !!settings[key];
+    });
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('.seg-group .seg'), function (btn) {
+    btn.addEventListener('click', function () {
+      var group = btn.closest('.seg-group');
+      var key = group.dataset.seg;
+      var value = btn.dataset.value;
+      if (key === 'theme') setThemePref(value);
+      else {
+        settings[key] = group.dataset.num ? Number(value) : parseFloat(value) || value;
+        if (key === 'bodyLine') settings.bodyLine = parseFloat(value);
+        applySettings();
+        saveSettings();
+      }
+    });
   });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-check]'), function (input) {
+    input.addEventListener('change', function () {
+      var key = input.dataset.check;
+      if (key === 'sidebarVisible') {
+        settings.sidebar = input.checked ? 'visible' : 'hidden';
+        applySettings();
+      } else {
+        settings[key] = input.checked;
+        applySettings();
+      }
+      saveSettings();
+    });
+  });
+
+  function openSettings() {
+    els.settingsOverlay.hidden = false;
+    syncSettingsControls();
+  }
+  function closeSettings() {
+    els.settingsOverlay.hidden = true;
+    saveSettings();
+  }
+  els.settingsBtn.addEventListener('click', openSettings);
+  els.settingsClose.addEventListener('click', closeSettings);
+  els.settingsOverlay.addEventListener('mousedown', function (event) {
+    if (event.target === els.settingsOverlay) closeSettings();
+  });
+  els.settingsReset.addEventListener('click', function () {
+    settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+    setThemePref('auto');
+    applySettings();
+    saveSettings();
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('.settings-nav [data-panel]'), function (btn) {
+    btn.addEventListener('click', function () {
+      Array.prototype.forEach.call(document.querySelectorAll('.settings-nav [data-panel]'), function (b) {
+        b.classList.toggle('active', b === btn);
+      });
+      Array.prototype.forEach.call(document.querySelectorAll('.settings-panel'), function (panel) {
+        panel.classList.toggle('active', panel.dataset.panel === btn.dataset.panel);
+      });
+    });
+  });
+
+  els.sidebarToggle.addEventListener('click', function () {
+    settings.sidebar = settings.sidebar === 'hidden' ? 'visible' : 'hidden';
+    applySettings();
+    saveSettings();
+  });
+  applySettings();
 
   function showAuth() {
     els.authView.hidden = false;
@@ -230,6 +359,10 @@
   }
 
   function updateActiveLine() {
+    if (!settings.activeLine) {
+      els.activeLine.hidden = true;
+      return;
+    }
     var textarea = els.noteContent;
     if (textarea.hidden || state.mode === 'preview') {
       els.activeLine.hidden = true;
@@ -456,6 +589,7 @@
   }
 
   function addCodeCopyButtons(target) {
+    if (!settings.copyButton) return;
     Array.prototype.forEach.call(target.querySelectorAll('pre'), function (pre) {
       var button = document.createElement('button');
       button.type = 'button';
@@ -489,6 +623,7 @@
       FORBID_ATTR: ['style']
     });
     highlightCodeBlocks(target);
+    beautifyCodeBlocks(target);
     addCodeCopyButtons(target);
   }
 
@@ -497,6 +632,45 @@
     if (!window.hljs || typeof window.hljs.highlightElement !== 'function') return;
     Array.prototype.forEach.call(target.querySelectorAll('pre code'), function (block) {
       try { window.hljs.highlightElement(block); } catch (ignore) { /* 单块失败不影响整体 */ }
+    });
+  }
+
+  // 代码块美化：底部语言标签 + 可选行号列（滚动同步）
+  function beautifyCodeBlocks(target) {
+    Array.prototype.forEach.call(target.querySelectorAll('pre'), function (pre) {
+      var code = pre.querySelector('code');
+      if (!code) return;
+
+      if (settings.langLabel) {
+        var langMatch = (code.className || '').match(/language-([\w+#.-]+)/);
+        if (langMatch && !pre.querySelector('.code-lang')) {
+          var chip = document.createElement('span');
+          chip.className = 'code-lang';
+          chip.textContent = langMatch[1].toLowerCase();
+          pre.appendChild(chip);
+        }
+      }
+
+      if (settings.lineNumbers && !pre.dataset.ln) {
+        pre.dataset.ln = '1';
+        var lineCount = code.textContent.replace(/\n$/, '').split('\n').length;
+        var gutter = document.createElement('div');
+        gutter.className = 'code-ln';
+        gutter.setAttribute('aria-hidden', 'true');
+        for (var i = 1; i <= lineCount; i++) {
+          var num = document.createElement('div');
+          num.textContent = i;
+          gutter.appendChild(num);
+        }
+        var codeStyle = window.getComputedStyle(code);
+        var preStyle = window.getComputedStyle(pre);
+        gutter.style.fontSize = codeStyle.fontSize;
+        gutter.style.lineHeight = preStyle.lineHeight;
+        pre.appendChild(gutter);
+        pre.addEventListener('scroll', function () {
+          gutter.style.transform = 'translateY(' + (-pre.scrollTop) + 'px)';
+        });
+      }
     });
   }
 
@@ -809,6 +983,16 @@
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
       event.preventDefault();
       flushSave();
+    }
+    // Ctrl + , 打开偏好设置（Typora 同款快捷键）
+    if ((event.ctrlKey || event.metaKey) && event.key === ',') {
+      event.preventDefault();
+      if (els.settingsOverlay.hidden) openSettings();
+      else closeSettings();
+    }
+    if (event.key === 'Escape' && !els.settingsOverlay.hidden) {
+      event.preventDefault();
+      closeSettings();
     }
   });
 

@@ -160,6 +160,10 @@ has "$TMP/index" 'vendor/hljs-extra.min.js' && pass '已引入扩展语言包' |
 has "$TMP/index" 'langPopup' && pass '语言补全弹窗元素存在' || fail '弹窗元素缺失'
 has "$TMP/index" 'id="who"' && fail '顶栏仍显示用户名' || pass '顶栏不再显示用户名'
 has "$TMP/index" 'displayName' && pass '底部显示名元素存在' || fail '底部显示名元素缺失'
+has "$TMP/index" 'settingsOverlay' && pass '偏好设置弹窗元素存在' || fail '设置弹窗缺失'
+has "$TMP/index" 'settingsBtn' && pass '设置入口按钮存在' || fail '设置按钮缺失'
+has "$TMP/index" 'data-panel="fonts"' && pass '设置面板：字体分区存在' || fail '字体面板缺失'
+has "$TMP/index" 'data-seg="codeFont"' && pass '设置面板：代码字体选项存在' || fail '代码字体选项缺失'
 curl -s -o /dev/null -w '%{http_code}' "$BASE/vendor/highlight.min.js" > "$TMP/codeHljs"
 curl -s -o /dev/null -w '%{http_code}' "$BASE/vendor/hljs-extra.min.js" > "$TMP/codeExtra"
 [ "$(cat "$TMP/codeHljs")" = '200' ] && [ "$(cat "$TMP/codeExtra")" = '200' ] \

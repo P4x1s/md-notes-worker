@@ -59,6 +59,7 @@
           </div>
           <button id="exportBtn" class="icon-btn" type="button" title="导出为 Markdown 文件">导出</button>
           <button id="themeToggle" class="icon-btn" type="button" title="主题循环切换：自动（按时段深浅）→ 浅色 → 深色">自动</button>
+          <button id="settingsBtn" class="icon-btn" type="button" title="偏好设置 (Ctrl + ,)">设置</button>
           <button id="deleteBtn" class="icon-btn danger" type="button" title="删除当前笔记">删除</button>
         </div>
       </header>
@@ -94,6 +95,128 @@
       </footer>
     </main>
   </section>
+
+  <div id="settingsOverlay" class="settings-overlay" hidden>
+    <div class="settings-modal" role="dialog" aria-modal="true" aria-label="偏好设置">
+      <div class="settings-nav">
+        <div class="settings-title">偏好设置</div>
+        <button type="button" class="active" data-panel="appearance">外观</button>
+        <button type="button" data-panel="fonts">字体</button>
+        <button type="button" data-panel="code">代码</button>
+        <button type="button" data-panel="about">关于</button>
+      </div>
+      <div class="settings-main">
+        <div class="settings-body">
+          <section class="settings-panel active" data-panel="appearance">
+            <div class="settings-row">
+              <span class="settings-label">主题模式
+                <span class="settings-desc">「自动」按时段切换：19:00–次日 07:00 深色</span>
+              </span>
+              <span class="seg-group" data-seg="theme">
+                <button type="button" class="seg" data-value="auto">自动</button>
+                <button type="button" class="seg" data-value="light">浅色</button>
+                <button type="button" class="seg" data-value="dark">深色</button>
+              </span>
+            </div>
+            <div class="settings-row">
+              <span class="settings-label">显示菜单栏
+                <span class="settings-desc">隐藏后可点击顶栏「侧栏」按钮恢复</span>
+              </span>
+              <input type="checkbox" data-check="sidebarVisible">
+            </div>
+            <div class="settings-row">
+              <span class="settings-label">编辑时高亮当前行
+                <span class="settings-desc">仿 Typora 的活动行底色</span>
+              </span>
+              <input type="checkbox" data-check="activeLine">
+            </div>
+          </section>
+          <section class="settings-panel" data-panel="fonts">
+            <div class="settings-row">
+              <span class="settings-label">正文字体</span>
+              <span class="seg-group" data-seg="bodyFont">
+                <button type="button" class="seg" data-value="sans">无衬线</button>
+                <button type="button" class="seg" data-value="serif">衬线</button>
+                <button type="button" class="seg" data-value="system">系统</button>
+              </span>
+            </div>
+            <div class="settings-row">
+              <span class="settings-label">正文字号</span>
+              <span class="seg-group" data-seg="bodySize" data-num="1">
+                <button type="button" class="seg" data-value="15">15</button>
+                <button type="button" class="seg" data-value="16">16</button>
+                <button type="button" class="seg" data-value="17">17</button>
+                <button type="button" class="seg" data-value="18">18</button>
+              </span>
+            </div>
+            <div class="settings-row">
+              <span class="settings-label">正文行距</span>
+              <span class="seg-group" data-seg="bodyLine">
+                <button type="button" class="seg" data-value="1.6">紧凑</button>
+                <button type="button" class="seg" data-value="1.8">标准</button>
+                <button type="button" class="seg" data-value="2">宽松</button>
+              </span>
+            </div>
+          </section>
+          <section class="settings-panel" data-panel="code">
+            <div class="settings-row">
+              <span class="settings-label">代码字体</span>
+              <span class="seg-group" data-seg="codeFont">
+                <button type="button" class="seg" data-value="cascadia">Cascadia</button>
+                <button type="button" class="seg" data-value="consolas">Consolas</button>
+                <button type="button" class="seg" data-value="jetbrains">JetBrains</button>
+                <button type="button" class="seg" data-value="mono">经典</button>
+              </span>
+            </div>
+            <div class="settings-row">
+              <span class="settings-label">代码字号</span>
+              <span class="seg-group" data-seg="codeSize" data-num="1">
+                <button type="button" class="seg" data-value="13">13</button>
+                <button type="button" class="seg" data-value="14">14</button>
+                <button type="button" class="seg" data-value="15">15</button>
+                <button type="button" class="seg" data-value="16">16</button>
+              </span>
+            </div>
+            <div class="settings-row">
+              <span class="settings-label">显示行号
+                <span class="settings-desc">在代码块左侧显示行号列</span>
+              </span>
+              <input type="checkbox" data-check="lineNumbers">
+            </div>
+            <div class="settings-row">
+              <span class="settings-label">显示语言标签
+                <span class="settings-desc">代码块右下角显示语言名称</span>
+              </span>
+              <input type="checkbox" data-check="langLabel">
+            </div>
+            <div class="settings-row">
+              <span class="settings-label">复制按钮
+                <span class="settings-desc">悬停代码块时显示「复制」</span>
+              </span>
+              <input type="checkbox" data-check="copyButton">
+            </div>
+          </section>
+          <section class="settings-panel" data-panel="about">
+            <div class="about-block">
+              <div class="about-mark">M</div>
+              <h2>Markdown 记事本</h2>
+              <p class="about-ver">版本 0.2.0 · 单用户私有部署</p>
+              <p class="about-line">Typora 风格的在线 Markdown 笔记本，运行于 Cloudflare Workers。</p>
+              <ul>
+                <li>实时预览 / 分屏编辑 / 自动保存</li>
+                <li>191 种语言代码高亮与语言自动补全</li>
+                <li>Turnstile 人机验证 · 服务端会话吊销 · CSRF 双重防御</li>
+              </ul>
+            </div>
+          </section>
+        </div>
+        <div class="settings-foot">
+          <button id="settingsReset" class="icon-btn" type="button">恢复默认</button>
+          <button id="settingsClose" class="primary" type="button">完成</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <script src="/vendor/marked.min.js"></script>
   <script src="/vendor/purify.min.js"></script>
