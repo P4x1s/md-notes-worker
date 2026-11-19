@@ -18,7 +18,13 @@
 
 选择 Workers 而非 Pages 的原因：API、静态资源、鉴权与限流集中在一个部署单元，依赖最少。Markdown 原文入库、HTML 只在浏览器生成并消毒，不把不可信 HTML 写入服务端。
 
-成品截图：`ui-final-auth.png`、`ui-final-light-preview.png`、`ui-final-split.png`、`ui-final-dark-preview.png`、`ui-final-dark-split.png`。
+## 成品预览
+
+| 登录页（含 Turnstile 人机验证） | 浅色 · 预览模式 |
+| --- | --- |
+| ![登录页](ui-final-auth.png) | ![浅色预览](ui-final-light-preview.png) |
+| ![分屏模式](ui-final-split.png) | ![深色预览](ui-final-dark-preview.png) |
+| ![深色分屏](ui-final-dark-split.png) | |
 
 ## 2. 已实现功能
 
@@ -213,7 +219,7 @@ npm run dev
 本地已实际运行验证：
 
 - `bash scripts/smoke-test.sh`：单用户模式 24 项全部通过，覆盖 D1 初始化、登录成功/失败路径、注册端点移除（404）、未登录 401、新建、编辑持久化、删除、静态资源、Cookie 属性、CSP，以及登出后旧 Cookie 失效、另一会话不受影响。
-- 无头 Edge 端到端：登录、两篇笔记、搜索过滤（2 条→1 条）、分屏布局、代码块复制按钮、导出按钮、主题切换、字数/行数统计均验证通过；截图见 `ui-final-*.png`（截图为早期多用户版界面，当前登录页已无注册/邀请码元素）。
+- 无头 Edge 端到端：登录、两篇笔记、搜索过滤（2 条→1 条）、分屏布局、代码块复制按钮、导出按钮、主题切换、字数/行数统计均验证通过；界面截图见上方「成品预览」（编辑器各模式截图与当前界面一致，登录页截图为当前单用户版）。
 - Markdown 消毒：`<script>` / `onerror` / `javascript:` URL 均被清除，脚本未执行，标题正常渲染（`PWNED=0|SCRIPT=0|ONERROR=0|JSURL=0|H1=1`）。
 
 验证过程中发现并修复两个真实缺陷：`ratelimit.js` 中 `count` 变量作用域错误导致登录 500；分屏模式遗漏切换布局 class 导致并排布局未生效。
