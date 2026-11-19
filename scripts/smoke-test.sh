@@ -59,6 +59,22 @@ CB=$(sed -n 's/^[Ss]et-[Cc]ookie: \(session=[^;]*\).*/\1/p' "$TMP/hB" | head -1)
 [ -n "$CB" ] && pass '再次登录下发会话 B' || fail '登录（会话 B）失败'
 
 echo '== 5. 登录失败路径 =='
+# CSRF 防线：非 JSON Content-Type 被拒（415）
+curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/auth/login" \
+  -H "CF-Connecting-IP: $TEST_IP" -H 'Content-Type: text/plain' \
+  -d "{\"username\":\"$ADMIN_USER\",\"password\":\"$ADMIN_PASS\",\"turnstileToken\":\"local-test-token\"}" > "$TMP/codeCt"
+[ "$(cat "$TMP/codeCt")" = '415' ] && pass 'text/plain 请求被拒（415）' || fail 'Content-Type 未校验'
+# CSRF 防线：跨源 Origin 被拒（403）
+curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/auth/login" \
+  -H "CF-Connecting-IP: $TEST_IP" -H 'Content-Type: application/json' \
+  -H 'Origin: https://evil.example' \
+  -d "{\"username\":\"$ADMIN_USER\",\"password\":\"$ADMIN_PASS\",\"turnstileToken\":\"local-test-token\"}" > "$TMP/codeOrigin"
+[ "$(cat "$TMP/codeOrigin")" = '403' ] && pass '跨源 Origin 被拒（403）' || fail 'Origin 未校验'
+curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/auth/login" \
+  -H "CF-Connecting-IP: $TEST_IP" -H 'Content-Type: application/json' \
+  -H "Origin: $BASE" \
+  -d "{\"username\":\"$ADMIN_USER\",\"password\":\"$ADMIN_PASS\",\"turnstileToken\":\"local-test-token\"}" > "$TMP/codeOriginOk"
+[ "$(cat "$TMP/codeOriginOk")" = '200' ] && pass '同源 Origin 正常登录' || fail '同源 Origin 被误拒'
 curl -s -o "$TMP/bBadPass" -w '%{http_code}' -X POST "$BASE/api/auth/login" \
   -H "CF-Connecting-IP: $TEST_IP" -H 'Content-Type: application/json' \
   -d "{\"username\":\"$ADMIN_USER\",\"password\":\"wrong-password\",\"turnstileToken\":\"local-test-token\"}" > "$TMP/codeBadPass"

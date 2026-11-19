@@ -55,6 +55,13 @@ export function parseId(raw) {
 }
 
 export async function readJson(request) {
+  // 强制 JSON Content-Type：跨站表单/fetch 只能发 text/plain 等简单类型，
+  // application/json 会触发 CORS 预检被浏览器拦截，是比 SameSite 更可靠的 CSRF 防线
+  const contentType = (request.headers.get('Content-Type') || '').split(';')[0].trim().toLowerCase();
+  if (contentType !== 'application/json') {
+    throw new HttpError(415, 'unsupported_media_type', '请求必须是 application/json');
+  }
+
   const declared = Number(request.headers.get('Content-Length') || '0');
   if (declared > LIMITS.bodyMax) {
     throw new HttpError(413, 'payload_too_large', '请求体过大');

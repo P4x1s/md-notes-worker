@@ -134,6 +134,7 @@ CREATE INDEX idx_sessions_user ON sessions(user_id);
 ### 5.5 限流与错误处理
 
 - Turnstile 人机验证：登录前必须通过（token 服务端 siteverify 校验，单次有效、300 秒过期）；SITE_KEY 与 SECRET_KEY 须同时配置才启用，只配一个按未启用处理，避免锁死登录。
+- CSRF 双防线：API 强制 `application/json`（跨站简单请求无法伪造该类型，浏览器会拦截预检）+ 写请求 Origin 同源校验（无 Origin 的 API 直连不受影响）+ `SameSite=Lax` Cookie。
 - KV 固定窗口：登录 10 次/分钟（按 `CF-Connecting-IP`），超限返回 429 + `Retry-After`。KV 故障时放行并记录日志，避免锁死登录。
 - 请求体校验：`Content-Length` 与实际字节双重限制 256 KB；笔记内容 200 KB、标题 200 字符。
 - 统一 `try/catch`：业务错误返回对应 4xx，未知异常只返回 500 通用文案，堆栈仅写服务端日志。
@@ -186,6 +187,8 @@ npm run dev
 | 会话伪造/窃取 | HMAC 验签、HttpOnly、Secure、SameSite=Lax、库内只存摘要 | 支持单会话吊销，不做全设备强制登出 |
 | 凭证泄露 | `ADMIN_PASSWORD` 为 secret 不入库；改动只需在 Dashboard 更新，立即生效 |
 | 暴力破解 | Turnstile 人机验证 + 登录限流双重拦截 |
+| CSRF | application/json 强制 + Origin 同源校验 + SameSite=Lax |
+| 消毒库过期 | DOMPurify 3.4.18（含 CVE-2026-65914/49458/75838 修复）+ marked 15.0.12，本地 vendor 化 |
 | Markdown XSS | DOMPurify + 本地依赖 + CSP | CSP 的 `style-src` 含 `unsafe-inline` |
 | 超大请求 | Content-Length + 实际字节双重校验 | 单笔记 200 KB |
 | 信息泄露 | 通用错误文案、堆栈不入响应 | 日志保留在 Worker |

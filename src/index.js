@@ -143,10 +143,13 @@ async function handleLogin(request, env) {
   }, 200, { 'Set-Cookie': cookie });
 }
 
-async function handleLogout(request, env) {  const token = getCookie(request, COOKIE_NAME);
+async function handleLogout(request, env) {
+  const token = getCookie(request, COOKIE_NAME);
   if (token && env.DB) {
     try {
       await db.deleteSession(env.DB, await hashToken(token));
+      // 登出时顺带清理过期登记，避免长期不登录时 sessions 表缓慢增长
+      await db.deleteExpiredSessions(env.DB);
     } catch (error) {
       console.error('session revoke failed', error);
     }
@@ -223,8 +226,24 @@ async function handleDeleteNote(request, env, id) {
 
 // ---------------- 路由 ----------------
 
+// CSRF 纵深防御：写请求若携带 Origin 必须同源。
+// 浏览器跨站请求必带 Origin；非浏览器 API 调用（curl 等）无 Origin 头则放行。
+function sameOriginOk(request, url) {
+  const origin = request.headers.get('Origin');
+  if (!origin) return true;
+  try {
+    return new URL(origin).host === url.host;
+  } catch {
+    return false;
+  }
+}
+
 async function handleApi(request, env, path) {
   const method = request.method;
+  const url = new URL(request.url);
+  if (method !== 'GET' && method !== 'HEAD' && !sameOriginOk(request, url)) {
+    return fail(403, 'bad_origin', '请求来源不被允许');
+  }
 
   if (path === '/api/auth/login' && method === 'POST') return handleLogin(request, env);
   if (path === '/api/auth/logout' && method === 'POST') return handleLogout(request, env);

@@ -8,6 +8,9 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # 最小权限：部署流程只需要读代码，不需要写仓库/发 PR
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
