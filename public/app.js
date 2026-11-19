@@ -20,6 +20,7 @@
     logoutBtn: $('logoutBtn'), emptyState: $('emptyState'),
     docCrumb: $('docCrumb'), sidebarToggle: $('sidebarToggle'),
     sidebarBackdrop: $('sidebarBackdrop'),
+    editorToolbar: $('editorToolbar'),
     themeToggle: $('themeToggle'),
     settingsBtn: $('settingsBtn'), settingsOverlay: $('settingsOverlay'),
     settingsReset: $('settingsReset'), settingsClose: $('settingsClose'),
@@ -88,7 +89,7 @@
   // ---------- 偏好设置（Typora 风格） ----------
   var SETTINGS_KEY = 'mdnotes-settings';
   var DEFAULT_SETTINGS = {
-    sidebar: 'visible', activeLine: true,
+    sidebar: 'visible', activeLine: true, toolbar: true,
     bodyFont: 'sans', bodySize: 16, bodyLine: 1.8,
     codeFont: 'cascadia', codeSize: 14,
     lineNumbers: false, langLabel: true, copyButton: true
@@ -134,6 +135,7 @@
     root.style.setProperty('--body-line', String(settings.bodyLine));
     root.style.setProperty('--code-size', String(settings.codeSize));
     syncDrawer();
+    els.editorToolbar.hidden = !settings.toolbar;
     if (!settings.activeLine || els.noteContent.hidden) els.activeLine.hidden = true;
     // 行号 / 语言标签 / 复制按钮变动需要重建预览 DOM（两个容器都重建，与可见性无关）
     if (state.current) {
@@ -234,6 +236,147 @@
   function onMobileChange() { syncDrawer(); }
   if (mobileMq.addEventListener) mobileMq.addEventListener('change', onMobileChange);
   else if (mobileMq.addListener) mobileMq.addListener(onMobileChange);
+
+  // ---------- 编辑器工具栏（仿 Typora 段落/格式菜单） ----------
+  // 用 execCommand('insertText') 写入以保留原生撤销栈；不支持时回退手工拼接
+  function replaceRange(start, end, insertText, newSelStart, newSelEnd) {
+    var ta = els.noteContent;
+    ta.focus();
+    ta.setSelectionRange(start, end);
+    var ok = false;
+    try { ok = document.execCommand('insertText', false, insertText); } catch (ignore) { ok = false; }
+    if (!ok) {
+      var value = ta.value;
+      ta.value = value.slice(0, start) + insertText + value.slice(end);
+    }
+    var selStart = start + (newSelStart !== undefined ? newSelStart : insertText.length);
+    var selEnd = start + (newSelEnd !== undefined ? newSelEnd : insertText.length);
+    ta.setSelectionRange(selStart, selEnd);
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  function lineRange() {
+    var ta = els.noteContent;
+    var start = ta.selectionStart, end = ta.selectionEnd, value = ta.value;
+    var lineStart = value.lastIndexOf('\n', start - 1) + 1;
+    var lineEnd = value.indexOf('\n', end);
+    if (lineEnd === -1) lineEnd = value.length;
+    return { start: lineStart, end: lineEnd, text: value.slice(lineStart, lineEnd) };
+  }
+
+  var LINE_PREFIX = /^(#{1,6}\s+|>\s?|[-*+]\s\[[ x]\]\s?|[-*+]\s|\d+\.\s)/;
+  function toggleLinePrefix(prefix, regexp) {
+    var range = lineRange();
+    var stripped = range.text.replace(LINE_PREFIX, '');
+    if (regexp.test(range.text)) {
+      // 已有该前缀 → 移除（切换）
+      replaceRange(range.start, range.end, stripped);
+    } else {
+      replaceRange(range.start, range.end, prefix + stripped, range.start + prefix.length, range.start + prefix.length + stripped.length);
+    }
+  }
+
+  function ensureBlankLinesAround(start) {
+    var value = els.noteContent.value;
+    var needBefore = start > 0 && value.charAt(start - 1) !== '\n';
+    return needBefore;
+  }
+
+  function insertBlock(text, selStartInText, selEndInText) {
+    var range = lineRange();
+    var lead = ensureBlankLinesAround(range.start) ? '\n' : '';
+    var full = lead + text;
+    var base = range.start + lead.length;
+    replaceRange(range.start, range.start, full,
+      base + (selStartInText !== undefined ? selStartInText : 0),
+      base + (selEndInText !== undefined ? selEndInText : 0));
+  }
+
+  function wrapSelection(before, after, placeholder) {
+    var ta = els.noteContent;
+    var start = ta.selectionStart, end = ta.selectionEnd;
+    var selected = ta.value.slice(start, end);
+    if (!selected) selected = placeholder || '';
+    var insertText = before + selected + after;
+    var innerStart = start + before.length;
+    replaceRange(start, end, insertText, innerStart, innerStart + selected.length);
+  }
+
+  function applyInsert(kind) {
+    if (kind === 'link') {
+      var ta = els.noteContent;
+      var start = ta.selectionStart, end = ta.selectionEnd;
+      var selected = ta.value.slice(start, end) || '链接文字';
+      var insertText = '[' + selected + '](https://)';
+      var urlStart = start + selected.length + 3;
+      replaceRange(start, end, insertText, urlStart, urlStart + 8);
+    } else if (kind === 'image') {
+      insertBlock('![图片描述](https://)', 6, 22);
+    } else if (kind === 'table') {
+      insertBlock('| 列一 | 列二 | 列三 |\n| --- | --- | --- |\n|  内容 |  内容 |  内容 |\n\n');
+    } else if (kind === 'code') {
+      insertBlock('```\n\n```\n', 4, 4);
+    } else if (kind === 'quote') {
+      toggleLinePrefix('> ', /^>\s?/);
+    } else if (kind === 'ul') {
+      toggleLinePrefix('- ', /^[-*+]\s/);
+    } else if (kind === 'ol') {
+      toggleLinePrefix('1. ', /^\d+\.\s/);
+    } else if (kind === 'task') {
+      toggleLinePrefix('- [ ] ', /^[-*+]\s\[[ x]\]\s?/);
+    } else if (kind === 'hr') {
+      insertBlock('---\n\n');
+    }
+  }
+
+  function applyHeading(level) {
+    var range = lineRange();
+    var stripped = range.text.replace(LINE_PREFIX, '');
+    var prefix = level === 0 ? '' : new Array(level + 1).join('#') + ' ';
+    replaceRange(range.start, range.end, prefix + stripped);
+  }
+
+  function closeToolbarMenus() {
+    Array.prototype.forEach.call(document.querySelectorAll('.tb-menu'), function (menu) {
+      menu.hidden = true;
+    });
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('[data-menu-btn]'), function (btn) {
+    btn.addEventListener('click', function (event) {
+      event.stopPropagation();
+      var menu = btn.parentElement.querySelector('.tb-menu');
+      var willOpen = menu.hidden;
+      closeToolbarMenus();
+      menu.hidden = !willOpen;
+    });
+  });
+  document.addEventListener('click', closeToolbarMenus);
+  Array.prototype.forEach.call(document.querySelectorAll('.tb-menu'), function (menu) {
+    menu.addEventListener('click', function (event) { event.stopPropagation(); });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('.tb-menu button'), function (item) {
+    item.addEventListener('click', function () {
+      var attr = item.getAttribute('data-line');
+      if (!attr || els.noteContent.hidden) return;
+      applyHeading(attr === 'p' ? 0 : Number(attr.charAt(1)));
+      closeToolbarMenus();
+    });
+  });
+
+  els.editorToolbar.addEventListener('click', function (event) {
+    var btn = event.target.closest('.tb-btn');
+    if (!btn || btn.hasAttribute('data-menu-btn')) return;
+    if (els.noteContent.hidden) return;
+    var attr;
+    if ((attr = btn.getAttribute('data-line'))) {
+      applyHeading(attr === 'p' ? 0 : Number(attr.charAt(1)));
+    } else if ((attr = btn.getAttribute('data-wrap'))) {
+      wrapSelection(attr, attr, btn.getAttribute('data-ph') || '');
+    } else if ((attr = btn.getAttribute('data-insert'))) {
+      applyInsert(attr);
+    }
+    closeToolbarMenus();
+  });
   applySettings();
 
   function showAuth() {
@@ -615,6 +758,37 @@
     renderList();
   }
 
+  // 复制到剪贴板：优先 Async Clipboard API，失败/缺失时回退 execCommand（兼容移动端）
+  function copyTextToClipboard(text) {
+    return new Promise(function (resolve, reject) {
+      var legacy = function () {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.top = '-9999px';
+        ta.style.left = '-9999px';
+        ta.style.whiteSpace = 'pre';
+        document.body.appendChild(ta);
+        var ok = false;
+        try {
+          ta.focus();
+          ta.select();
+          ta.setSelectionRange(0, text.length);
+          ok = document.execCommand('copy');
+        } catch (ignore) { ok = false; }
+        document.body.removeChild(ta);
+        if (ok) resolve();
+        else reject(new Error('copy failed'));
+      };
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        navigator.clipboard.writeText(text).then(resolve, legacy);
+      } else {
+        legacy();
+      }
+    });
+  }
+
   function addCodeCopyButtons(target) {
     if (!settings.copyButton) return;
     Array.prototype.forEach.call(target.querySelectorAll('pre'), function (pre) {
@@ -622,15 +796,14 @@
       button.type = 'button';
       button.className = 'copy-code';
       button.textContent = '复制';
-      button.addEventListener('click', async function () {
+      button.addEventListener('click', function () {
         var code = pre.querySelector('code');
         var text = code ? code.textContent : pre.textContent;
-        try {
-          await navigator.clipboard.writeText(text);
+        copyTextToClipboard(text).then(function () {
           button.textContent = '已复制';
-        } catch (clipboardError) {
+        }, function () {
           button.textContent = '复制失败';
-        }
+        });
         setTimeout(function () { button.textContent = '复制'; }, 1500);
       });
       pre.appendChild(button);
@@ -1021,6 +1194,18 @@
       event.preventDefault();
       if (els.settingsOverlay.hidden) openSettings();
       else closeSettings();
+    }
+    // Ctrl+B 加粗 / Ctrl+I 斜体 / Ctrl+K 链接（编辑器可见且工具栏启用时）
+    var fmtKey = (event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey
+      ? event.key.toLowerCase() : '';
+    if (fmtKey === 'b' || fmtKey === 'i' || fmtKey === 'k') {
+      if (!els.mainView.hidden && !els.editorPane.hidden && !els.noteContent.hidden
+          && els.settingsOverlay.hidden) {
+        event.preventDefault();
+        if (fmtKey === 'b') wrapSelection('**', '**', '加粗文字');
+        else if (fmtKey === 'i') wrapSelection('*', '*', '斜体文字');
+        else applyInsert('link');
+      }
     }
     if (event.key === 'Escape' && !els.settingsOverlay.hidden) {
       event.preventDefault();

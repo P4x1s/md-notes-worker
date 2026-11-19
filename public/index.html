@@ -74,6 +74,32 @@
           <article class="paper">
             <input id="noteTitle" class="title-input" maxlength="200" placeholder="笔记标题" aria-label="笔记标题">
             <div class="paper-divider"></div>
+            <div id="editorToolbar" class="editor-toolbar" role="toolbar" aria-label="插入与格式工具栏">
+              <div class="tb-group">
+                <button type="button" class="tb-btn" data-menu-btn="heading" aria-haspopup="true">标题 <span class="tb-caret">▾</span></button>
+                <div class="tb-menu" data-menu="heading" hidden>
+                  <button type="button" data-line="h1">一级标题</button>
+                  <button type="button" data-line="h2">二级标题</button>
+                  <button type="button" data-line="h3">三级标题</button>
+                  <button type="button" data-line="p">正文段落</button>
+                </div>
+              </div>
+              <span class="tb-divider"></span>
+              <button type="button" class="tb-btn tb-icon" data-wrap="**" data-ph="加粗文字" title="加粗 (Ctrl+B)"><b>B</b></button>
+              <button type="button" class="tb-btn tb-icon" data-wrap="*" data-ph="斜体文字" title="斜体 (Ctrl+I)"><i>I</i></button>
+              <button type="button" class="tb-btn tb-icon" data-wrap="~~" data-ph="删除文字" title="删除线"><s>S</s></button>
+              <button type="button" class="tb-btn tb-icon" data-wrap="`" data-ph="代码" title="行内代码">&lt;&gt;</button>
+              <span class="tb-divider"></span>
+              <button type="button" class="tb-btn" data-insert="link" title="超链接 (Ctrl+K)">链接</button>
+              <button type="button" class="tb-btn" data-insert="image" title="插入图像">图像</button>
+              <button type="button" class="tb-btn" data-insert="table" title="插入表格">表格</button>
+              <button type="button" class="tb-btn" data-insert="code" title="插入代码块">代码块</button>
+              <span class="tb-divider"></span>
+              <button type="button" class="tb-btn" data-insert="quote" title="引用">引用</button>
+              <button type="button" class="tb-btn" data-insert="ul" title="无序列表">列表</button>
+              <button type="button" class="tb-btn" data-insert="task" title="任务列表">任务</button>
+              <button type="button" class="tb-btn" data-insert="hr" title="水平分割线">分割线</button>
+            </div>
             <div class="editor-wrap">
               <div id="activeLine" class="active-line" aria-hidden="true"></div>
               <textarea id="noteContent" class="content-input" spellcheck="false"
@@ -130,6 +156,12 @@
                 <span class="settings-desc">仿 Typora 的活动行底色</span>
               </span>
               <input type="checkbox" data-check="activeLine">
+            </div>
+            <div class="settings-row">
+              <span class="settings-label">显示工具栏
+                <span class="settings-desc">编辑区上方的插入与格式按钮</span>
+              </span>
+              <input type="checkbox" data-check="toolbar">
             </div>
           </section>
           <section class="settings-panel" data-panel="fonts">
@@ -201,7 +233,7 @@
             <div class="about-block">
               <div class="about-mark">M</div>
               <h2>Markdown 记事本</h2>
-              <p class="about-ver">版本 0.2.0 · 单用户私有部署</p>
+              <p class="about-ver">版本 0.3.0 · 单用户私有部署</p>
               <p class="about-line">Typora 风格的在线 Markdown 笔记本，运行于 Cloudflare Workers。</p>
               <ul>
                 <li>实时预览 / 分屏编辑 / 自动保存</li>
