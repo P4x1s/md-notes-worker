@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Markdown 记事本</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <section id="authView" class="auth-shell">
+    <div class="auth-card">
+      <div class="auth-mark">M</div>
+      <h1>Markdown 记事本</h1>
+      <p class="sub">登录后在云端查看与管理你的笔记</p>
+      <form id="authForm">
+        <label class="field">用户名
+          <input id="authUsername" autocomplete="username" maxlength="32" required>
+        </label>
+        <label class="field">密码
+          <input id="authPassword" type="password" autocomplete="current-password" maxlength="128" required>
+        </label>
+        <label class="field" id="inviteRow" hidden>邀请码
+          <input id="authInvite" autocomplete="off" maxlength="128">
+        </label>
+        <p id="authError" class="error" role="alert"></p>
+        <button id="authSubmit" class="primary block" type="submit">登录</button>
+      </form>
+      <p class="switch"><a href="#" id="authSwitch">没有账号？注册</a></p>
+    </div>
+  </section>
+
+  <section id="mainView" class="app-shell" hidden>
+    <aside class="sidebar">
+      <div class="sidebar-head">
+        <div class="brand">
+          <span class="brand-mark">M</span>
+          <span class="brand-text">Markdown <em>记事本</em></span>
+        </div>
+        <span id="who" class="who"></span>
+      </div>
+      <input id="searchInput" class="search-input" type="search" placeholder="搜索笔记..." autocomplete="off" aria-label="搜索笔记">
+      <button id="newNoteBtn" class="new-note" type="button"><span class="plus">+</span> 新建笔记</button>
+      <div id="noteList" class="note-list" aria-label="笔记列表"></div>
+      <div class="sidebar-foot">
+        <span class="user-dot" id="userInitial"></span>
+        <button id="logoutBtn" class="logout" type="button">退出登录</button>
+      </div>
+    </aside>
+
+    <main class="workspace">
+      <header class="doc-header">
+        <button id="sidebarToggle" class="icon-btn" type="button" title="收起 / 展开侧栏">侧栏</button>
+        <div class="doc-crumb" id="docCrumb">未选择笔记</div>
+        <div class="header-actions">
+          <div class="tabs" role="tablist">
+            <button type="button" data-mode="edit" class="tab active" role="tab">编辑</button>
+            <button type="button" data-mode="preview" class="tab" role="tab">预览</button>
+            <button type="button" data-mode="split" class="tab" role="tab">分屏</button>
+          </div>
+          <button id="exportBtn" class="icon-btn" type="button" title="导出为 Markdown 文件">导出</button>
+          <button id="themeToggle" class="icon-btn" type="button" title="切换浅色 / 深色主题">深色</button>
+          <button id="deleteBtn" class="icon-btn danger" type="button" title="删除当前笔记">删除</button>
+        </div>
+      </header>
+
+      <div class="doc-scroll">
+        <div id="emptyState" class="empty">
+          <div class="empty-mark">M</div>
+          <p>选择左侧笔记，或新建一条开始书写。</p>
+        </div>
+        <div id="editorPane" class="editor-pane" hidden>
+          <article class="paper">
+            <input id="noteTitle" class="title-input" maxlength="200" placeholder="笔记标题" aria-label="笔记标题">
+            <div class="paper-divider"></div>
+            <div class="editor-wrap">
+              <div id="activeLine" class="active-line" aria-hidden="true"></div>
+              <textarea id="noteContent" class="content-input" spellcheck="false"
+                        placeholder="用 Markdown 书写。支持 # 标题、**粗体**、- 列表、``` 代码块 ……"></textarea>
+              <div id="preview" class="preview markdown-body" hidden></div>
+              <div id="splitPreview" class="split-preview markdown-body" hidden></div>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      <footer class="statusbar">
+        <button id="saveStatus" type="button" class="status" role="status">所有更改已保存</button>
+        <div class="status-right">
+          <span id="wordCount" class="metric">字数 0</span>
+          <span id="lineCount" class="metric">行数 0</span>
+          <span class="hint">Ctrl + S 保存</span>
+        </div>
+      </footer>
+    </main>
+  </section>
+
+  <script src="/vendor/marked.min.js"></script>
+  <script src="/vendor/purify.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

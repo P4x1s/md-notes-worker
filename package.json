@@ -1,0 +1,15 @@
+{
+  "name": "md-notes-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --local",
+    "deploy": "wrangler deploy --keep-vars",
+    "db:init:local": "wrangler d1 execute md-notes-db --local --file=./schema.sql",
+    "db:init:remote": "wrangler d1 execute md-notes-db --remote --file=./schema.sql"
+  },
+  "devDependencies": {
+    "wrangler": "^4.109.0"
+  }
+}
