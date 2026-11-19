@@ -57,11 +57,15 @@ async function hmacKey(secret) {
 
 export async function createSession(payload, secret, ttlSeconds) {
   const now = Math.floor(Date.now() / 1000);
+  // 随机标识保证 token 唯一：负载只有秒级时间戳时，同一秒内多次登录会产出
+  // 完全相同的 token，导致 sessions 表 token_hash 主键冲突
+  const jti = toBase64Url(crypto.getRandomValues(new Uint8Array(12)));
   const body = {
     sub: payload.sub,
     u: payload.username,
     iat: now,
-    exp: now + ttlSeconds
+    exp: now + ttlSeconds,
+    j: jti
   };
   const data = toBase64Url(encoder.encode(JSON.stringify(body)));
   const key = await hmacKey(secret);

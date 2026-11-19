@@ -4,6 +4,7 @@ import { ok, fail, getCookie, sessionCookie, clearSessionCookie, clientIp } from
 import { HttpError, readJson, validateUsername, validatePassword, validateNote, parseId } from './validate.js';
 import { createSession, readSession, hashToken, constantTimeEqualTextSafe } from './auth.js';
 import { checkRateLimit } from './ratelimit.js';
+import { turnstileEnabled, verifyTurnstileToken } from './turnstile.js';
 import * as db from './db.js';
 
 const COOKIE_NAME = 'session';
@@ -11,7 +12,7 @@ const DEFAULT_SESSION_TTL = 7 * 24 * 3600;
 const LOGIN_LIMIT = 10;
 const LOGIN_WINDOW = 60;
 
-const SECURITY_HEADERS = {
+const BASE_SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'no-referrer',
   'X-Frame-Options': 'DENY',
@@ -30,9 +31,19 @@ const SECURITY_HEADERS = {
   ].join('; ')
 };
 
-function withHeaders(response) {
+// Turnstile 启用时放行其脚本与 iframe（CSP 按需拼接，未启用时与原静态头完全一致）
+function buildSecurityHeaders(env) {
+  if (!turnstileEnabled(env)) return { ...BASE_SECURITY_HEADERS };
+  const csp = BASE_SECURITY_HEADERS['Content-Security-Policy']
+    .replace("script-src 'self'", "script-src 'self' https://challenges.cloudflare.com")
+    .replace("connect-src 'self'", "connect-src 'self' https://challenges.cloudflare.com")
+    + "; frame-src https://challenges.cloudflare.com";
+  return { ...BASE_SECURITY_HEADERS, 'Content-Security-Policy': csp };
+}
+
+function withHeaders(response, env) {
   const headers = new Headers(response.headers);
-  for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
+  for (const [name, value] of Object.entries(buildSecurityHeaders(env))) {
     if (!headers.has(name)) headers.set(name, value);
   }
   return new Response(response.body, {
@@ -101,6 +112,13 @@ async function handleLogin(request, env) {
   }
 
   const body = await readJson(request);
+
+  // 人机验证：启用 Turnstile 时必须携带有效 token（单次使用，失败即拒）
+  if (turnstileEnabled(env)) {
+    const pass = await verifyTurnstileToken(env, body.turnstileToken, clientIp(request));
+    if (!pass) return fail(403, 'turnstile_failed', '人机验证未通过，请刷新验证后重试');
+  }
+
   if (typeof body.username !== 'string' || typeof body.password !== 'string') {
     return fail(400, 'invalid_input', '请输入用户名和密码');
   }
@@ -125,8 +143,7 @@ async function handleLogin(request, env) {
   }, 200, { 'Set-Cookie': cookie });
 }
 
-async function handleLogout(request, env) {
-  const token = getCookie(request, COOKIE_NAME);
+async function handleLogout(request, env) {  const token = getCookie(request, COOKIE_NAME);
   if (token && env.DB) {
     try {
       await db.deleteSession(env.DB, await hashToken(token));
@@ -140,6 +157,15 @@ async function handleLogout(request, env) {
 async function handleMe(request, env) {
   const { user, response } = await requireUser(request, env);
   return response || ok({ user });
+}
+
+// 登录页配置：告知前端是否启用人机验证及站点密钥（site key 本身是公开信息）
+function handleAuthConfig(env) {
+  return ok({
+    turnstile: turnstileEnabled(env)
+      ? { enabled: true, siteKey: env.TURNSTILE_SITE_KEY }
+      : { enabled: false }
+  });
 }
 
 // ---------------- 笔记接口 ----------------
@@ -203,6 +229,7 @@ async function handleApi(request, env, path) {
   if (path === '/api/auth/login' && method === 'POST') return handleLogin(request, env);
   if (path === '/api/auth/logout' && method === 'POST') return handleLogout(request, env);
   if (path === '/api/auth/me' && method === 'GET') return handleMe(request, env);
+  if (path === '/api/auth/config' && method === 'GET') return handleAuthConfig(env);
 
   if (path === '/api/notes' && method === 'GET') return handleListNotes(request, env);
   if (path === '/api/notes' && method === 'POST') return handleCreateNote(request, env);
@@ -237,13 +264,13 @@ export default {
         response = fail(404, 'not_found', '页面不存在');
       }
 
-      return withHeaders(response);
+      return withHeaders(response, env);
     } catch (error) {
       if (error instanceof HttpError) {
-        return withHeaders(fail(error.status, error.code, error.message, error.headers));
+        return withHeaders(fail(error.status, error.code, error.message, error.headers), env);
       }
       console.error('Unhandled error:', error && error.stack ? error.stack : error);
-      return withHeaders(fail(500, 'internal_error', '服务器内部错误'));
+      return withHeaders(fail(500, 'internal_error', '服务器内部错误'), env);
     }
   }
 };

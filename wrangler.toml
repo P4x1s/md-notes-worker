@@ -7,7 +7,7 @@ compatibility_date = "2025-04-01"
 directory = "./public"
 binding = "ASSETS"
 
-# 生产资源（账号 CKevens / e427e1f610cf8d3901de877fb3993eb2）
+# 生产资源 ID（部署时回填；不要在仓库中写入账号名 / Account ID / 域名）
 [[d1_databases]]
 binding = "DB"
 database_name = "md-notes-db"
@@ -17,6 +17,8 @@ database_id = "f06cf269-ed99-43ee-99ac-1c3b8135a4e8"
 binding = "RATE_LIMIT"
 id = "487efaed395c49dcbdbf612265c4611a"
 
-# 非敏感配置可写在这里；SESSION_SECRET / INVITE_CODE 必须用 secret
+# 非敏感配置可写在这里；SESSION_SECRET / ADMIN_* / TURNSTILE_SECRET_KEY 必须用 secret
 [vars]
 SESSION_TTL_SECONDS = "604800"
+# Turnstile 站点密钥（公开信息，前端渲染 widget 用）；密钥用 secret：TURNSTILE_SECRET_KEY
+TURNSTILE_SITE_KEY = "0x4AAAAAAGIJ6mewudXFC-5m"

@@ -11,6 +11,7 @@
     authView: $('authView'), mainView: $('mainView'),
     authForm: $('authForm'), authUsername: $('authUsername'),
     authPassword: $('authPassword'),
+    tsWidget: $('tsWidget'),
     authError: $('authError'), authSubmit: $('authSubmit'),
     who: $('who'), userInitial: $('userInitial'),
     newNoteBtn: $('newNoteBtn'), noteList: $('noteList'),
@@ -69,11 +70,92 @@
   function showAuth() {
     els.authView.hidden = false;
     els.mainView.hidden = true;
+    initTurnstile();
   }
 
   function showMain() {
     els.authView.hidden = true;
     els.mainView.hidden = false;
+  }
+
+  // ---------- Turnstile 人机验证 ----------
+  // 就绪通知三重保险：api.js?onload 回调 + script.onload + 定时器探测；
+  // 容器必须可见后再 render（iframe 在 display:none 容器中会拿到 0 尺寸而显示异常）。
+  var ts = { enabled: false, siteKey: '', widgetId: null, scriptAdded: false, rendered: false };
+
+  function tsVisible() {
+    return !!(els.tsWidget.offsetWidth || els.tsWidget.offsetHeight || els.tsWidget.getClientRects().length);
+  }
+
+  function tsRender() {
+    if (ts.rendered || !window.turnstile || !tsVisible()) return;
+    try {
+      ts.widgetId = window.turnstile.render(els.tsWidget, {
+        sitekey: ts.siteKey,
+        callback: function () { /* token 就绪，提交时读取 */ },
+        'expired-callback': function () { tsReset(); },
+        'error-callback': function () { tsReset(); }
+      });
+      ts.rendered = true;
+    } catch (renderError) {
+      // 渲染失败按未启用处理，不阻塞登录（服务端仍有凭证校验与限流）
+      ts.enabled = false;
+      els.tsWidget.hidden = true;
+    }
+  }
+
+  function tsReset() {
+    if (ts.widgetId !== null && window.turnstile) {
+      try { window.turnstile.reset(ts.widgetId); } catch (ignore) { /* 已失效则忽略 */ }
+    }
+  }
+
+  function tsGetToken() {
+    if (!ts.enabled) return '';
+    if (ts.widgetId !== null && window.turnstile) {
+      try { return window.turnstile.getResponse(ts.widgetId) || ''; } catch (ignore) { return ''; }
+    }
+    return '';
+  }
+
+  function tsTryRenderLoop() {
+    tsRender();
+    var retries = 0;
+    var timer = setInterval(function () {
+      if (ts.rendered || ++retries > 100) { clearInterval(timer); return; }
+      tsRender();
+    }, 50);
+  }
+
+  function onTsReady() {
+    if (!ts.enabled) return;
+    tsTryRenderLoop();
+  }
+
+  function loadTurnstileScript() {
+    if (ts.scriptAdded) { onTsReady(); return; }
+    ts.scriptAdded = true;
+    window.onTsLoad = onTsReady; // 官方 onload 回调（显式渲染模式）
+    var script = document.createElement('script');
+    script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTsLoad&render=explicit';
+    script.async = true;
+    script.defer = true;
+    script.onload = onTsReady;  // 兜底一
+    script.onerror = function () { ts.enabled = false; els.tsWidget.hidden = true; };
+    document.head.appendChild(script);
+    setTimeout(onTsReady, 3000); // 兜底二：定时器探测
+  }
+
+  function initTurnstile() {
+    if (ts.scriptAdded) { onTsReady(); return; }
+    api('/api/auth/config').then(function (config) {
+      var t = config && config.turnstile;
+      if (!t || !t.enabled || !t.siteKey) return;
+      ts.enabled = true;
+      ts.siteKey = t.siteKey;
+      els.tsWidget.hidden = false;
+      loadTurnstileScript();
+    }).catch(function () { /* 拉取失败按未启用处理 */ });
   }
 
   function setStatus(kind, text) {
@@ -399,11 +481,18 @@
   els.authForm.addEventListener('submit', async function (event) {
     event.preventDefault();
     els.authError.textContent = '';
+
+    if (ts.enabled && !tsGetToken()) {
+      els.authError.textContent = '请先完成人机验证';
+      return;
+    }
+
     els.authSubmit.disabled = true;
     var payload = {
       username: els.authUsername.value.trim(),
       password: els.authPassword.value
     };
+    if (ts.enabled) payload.turnstileToken = tsGetToken();
 
     try {
       var data = await api('/api/auth/login', {
@@ -414,6 +503,13 @@
       await enterApp(data.user);
     } catch (error) {
       els.authError.textContent = error.message;
+      // token 单次有效：任何登录失败后都重置验证组件，下次提交重新取 token
+      if (ts.enabled) {
+        tsReset();
+        els.authError.textContent = error.code === 'turnstile_failed'
+          ? '人机验证未通过，请重新完成验证后再登录'
+          : error.message;
+      }
     } finally {
       els.authSubmit.disabled = false;
     }

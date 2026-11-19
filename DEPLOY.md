@@ -1,8 +1,6 @@
 # 部署到 Cloudflare（从零到可访问）
 
-本项目采用 **Cloudflare Workers + D1 + KV** 架构，已托管在私有仓库：
-
-> https://github.com/P4x1s/md-notes-worker
+本项目采用 **Cloudflare Workers + D1 + KV** 架构，代码托管在私有仓库（地址与账号信息不写入文档，避免泄露）。
 
 本手册假设你还没有配置任何 Cloudflare 资源，按步骤走完即可获得一个可访问的线上地址。全程约 15 分钟。
 
@@ -104,6 +102,7 @@ Worker 名称在 `name = "md-notes-demo"` 处，可改成你喜欢的名字；�
 | `SESSION_SECRET` | **Cloudflare Worker 运行时**（Dashboard 或 `wrangler secret put`） | 应用签名 Cookie |
 | `ADMIN_USERNAME` | **Cloudflare Worker 运行时** | 单用户登录用户名 |
 | `ADMIN_PASSWORD` | **Cloudflare Worker 运行时** | 单用户登录密码 |
+| `TURNSTILE_SECRET_KEY` | **Cloudflare Worker 运行时** | Turnstile 人机验证密钥（site key 在 `wrangler.toml [vars]`） |
 
 > Actions deploy **不会**把 GitHub Secrets 自动变成 Worker 运行时变量，所以后三个必须单独加到 Worker 上。
 
@@ -112,7 +111,7 @@ Worker 名称在 `name = "md-notes-demo"` 处，可改成你喜欢的名字；�
 - `CLOUDFLARE_ACCOUNT_ID` = 第 1 步的 Account ID
 
 **加 Worker 运行时 Secret**（二选一）：
-- Dashboard：Worker → Settings → Variables and Secrets → Add secret，依次添加 `SESSION_SECRET`、`ADMIN_USERNAME`、`ADMIN_PASSWORD`
+- Dashboard：Worker → Settings → Variables and Secrets → Add secret，依次添加 `SESSION_SECRET`、`ADMIN_USERNAME`、`ADMIN_PASSWORD`、`TURNSTILE_SECRET_KEY`
 - 本地 wrangler：`wrangler secret put SESSION_SECRET`，然后粘贴值回车（三个同理）
 
 ---
@@ -129,7 +128,9 @@ Apply D1 schema  →  wrangler deploy --keep-vars
 2. 在仓库 **Actions** 页找到 "Deploy Worker"，点 **Run workflow**（或直接 push 一次）
 3. 等待执行完成，绿色勾表示成功
 
-> workflow 已固定使用 `--keep-vars`。这是必需的：`wrangler deploy` 默认会删除 Dashboard 上配置的所有变量和 secret，不加这个参数会把第 6 步的 `SESSION_SECRET` / `ADMIN_USERNAME` / `ADMIN_PASSWORD` 清掉。
+> workflow 已固定使用 `--keep-vars`。这是必需的：`wrangler deploy` 默认会删除 Dashboard 上配置的所有变量和 secret，不加这个参数会把第 6 步配置的运行时 secret 清掉。
+
+> Turnstile 注意：widget 创建时配置的 hostname 必须包含你的 workers.dev 域名，否则线上验证 token 会被拒绝（登录报"人机验证未通过"）；本地开发用官方测试密钥对不受限。
 
 ## 7B. 方式 B：本地 wrangler 部署
 
@@ -141,6 +142,7 @@ npx wrangler d1 execute md-notes-db --remote --file=./schema.sql
 wrangler secret put SESSION_SECRET    # 粘贴第 4 步生成的值
 wrangler secret put ADMIN_USERNAME
 wrangler secret put ADMIN_PASSWORD
+wrangler secret put TURNSTILE_SECRET_KEY
 npm run deploy                  # 已内置 --keep-vars
 ```
 
@@ -181,4 +183,4 @@ npm run deploy                  # 已内置 --keep-vars
 - **改登录用户名 / 密码**：Dashboard → Worker → Settings → Variables and Secrets 更新 `ADMIN_USERNAME` / `ADMIN_PASSWORD`，保存后立即生效，无需重新 deploy（旧会话仍有效；要强制下线可同时轮换 `SESSION_SECRET`）
 - **轮换 SESSION_SECRET**：更新后会强制重新登录
 - **备份数据**：D1 控制台可导出 SQLite；定期备份是好习惯
-- **本地开发**：`npm run dev`，本地凭证在 `.dev.vars`（该文件已 gitignore，不会上传）
+- **本地开发**：`npm run dev`，本地凭证与 Turnstile 测试密钥在 `.dev.vars`（该文件已 gitignore，不会上传）

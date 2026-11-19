@@ -2,8 +2,8 @@
 
 一个可直接运行、按 Typora 视觉风格打磨的云端记事本：登录保护、笔记列表、新建/编辑/删除、标题、Markdown 编辑/预览/分屏、自动保存与保存状态，数据持久化到 D1 并按用户隔离。
 
-> **线上地址**：https://md-notes-demo.cashkeven.workers.dev （账号 `CKevens`）
-> **单用户模式**：无注册功能，登录账号由 Worker 变量/密钥 `ADMIN_USERNAME` / `ADMIN_PASSWORD` 配置，可在 Cloudflare Dashboard 随时修改。从零搭建步骤见 [DEPLOY.md](./DEPLOY.md)。
+> **单用户模式**：无注册功能，登录账号由 Worker 变量/密钥 `ADMIN_USERNAME` / `ADMIN_PASSWORD` 配置，可在 Cloudflare Dashboard 随时修改。
+> 线上地址与账号信息不写入仓库（见本地部署记录）。部署完成后访问 `https://<worker-name>.<your-subdomain>.workers.dev`。从零搭建步骤见 [DEPLOY.md](./DEPLOY.md)。
 
 ## 1. 方案概览
 
@@ -12,7 +12,8 @@
    │                                  │
    │  marked + DOMPurify               ├─ D1：users / notes / sessions
    │  （仅前端渲染 Markdown）           ├─ KV：登录限流计数
-   └──── Workers Static Assets ◀──────┴─ Secrets：SESSION_SECRET / ADMIN_USERNAME / ADMIN_PASSWORD
+   │                                   ├─ Turnstile：登录人机验证
+   └──── Workers Static Assets ◀──────┴─ Secrets：SESSION_SECRET / ADMIN_* / TURNSTILE_SECRET_KEY
 ```
 
 选择 Workers 而非 Pages 的原因：API、静态资源、鉴权与限流集中在一个部署单元，依赖最少。Markdown 原文入库、HTML 只在浏览器生成并消毒，不把不可信 HTML 写入服务端。
@@ -29,7 +30,7 @@
 | 保存 | 800ms 防抖自动保存、Ctrl+S 立即保存、状态提示、失败可重试、离开页提醒 |
 | 界面 | Typora 风格：窄侧栏、居中纸张、精细 Markdown 排版、浅色/深色主题、侧栏收起、当前行高亮、字数与行数 |
 | 持久化 | Cloudflare D1（SQLite），按 `user_id` 强制隔离 |
-| 安全 | 密码哈希、签名会话 + 服务端登记、输入校验、XSS 防护、CSP、限流、统一错误处理 |
+| 安全 | Turnstile 人机验证、签名会话 + 服务端登记、输入校验、XSS 防护、CSP、限流、统一错误处理 |
 
 ## 3. 项目结构
 
@@ -132,6 +133,7 @@ CREATE INDEX idx_sessions_user ON sessions(user_id);
 
 ### 5.5 限流与错误处理
 
+- Turnstile 人机验证：登录前必须通过（token 服务端 siteverify 校验，单次有效、300 秒过期）；SITE_KEY 与 SECRET_KEY 须同时配置才启用，只配一个按未启用处理，避免锁死登录。
 - KV 固定窗口：登录 10 次/分钟（按 `CF-Connecting-IP`），超限返回 429 + `Retry-After`。KV 故障时放行并记录日志，避免锁死登录。
 - 请求体校验：`Content-Length` 与实际字节双重限制 256 KB；笔记内容 200 KB、标题 200 字符。
 - 统一 `try/catch`：业务错误返回对应 4xx，未知异常只返回 500 通用文案，堆栈仅写服务端日志。
@@ -168,6 +170,7 @@ npm run dev
    npx wrangler secret put SESSION_SECRET   # 随机 ≥32 字符
    npx wrangler secret put ADMIN_USERNAME   # 登录用户名
    npx wrangler secret put ADMIN_PASSWORD   # 登录密码（强密码 ≥8 字符）
+   npx wrangler secret put TURNSTILE_SECRET_KEY   # Turnstile 密钥（site key 已在 wrangler.toml [vars]）
    ```
    也可在 Dashboard → Worker → Settings → Variables and Secrets 中添加/修改，改后立即生效，无需重新部署。
 4. 部署：`npm run deploy`。脚本固定带 `--keep-vars` —— `wrangler deploy` 默认会清空 Dashboard 上的变量，不带该参数会丢配置。
@@ -182,6 +185,7 @@ npm run dev
 | 密码泄露 | PBKDF2 + 随机盐 + 常量时间比较 | 生产必须强随机 `SESSION_SECRET` |
 | 会话伪造/窃取 | HMAC 验签、HttpOnly、Secure、SameSite=Lax、库内只存摘要 | 支持单会话吊销，不做全设备强制登出 |
 | 凭证泄露 | `ADMIN_PASSWORD` 为 secret 不入库；改动只需在 Dashboard 更新，立即生效 |
+| 暴力破解 | Turnstile 人机验证 + 登录限流双重拦截 |
 | Markdown XSS | DOMPurify + 本地依赖 + CSP | CSP 的 `style-src` 含 `unsafe-inline` |
 | 超大请求 | Content-Length + 实际字节双重校验 | 单笔记 200 KB |
 | 信息泄露 | 通用错误文案、堆栈不入响应 | 日志保留在 Worker |
@@ -189,7 +193,7 @@ npm run dev
 
 ## 9. MVP 边界与后续建议
 
-当前刻意不做：邮件验证/密码找回、Turnstile 人机验证、细粒度角色、版本历史、附件上传、精确限流（Durable Objects）、完整行内所见即所得编辑。
+当前刻意不做：邮件验证/密码找回、细粒度角色、版本历史、附件上传、精确限流（Durable Objects）、完整行内所见即所得编辑。
 
 已完成的迭代项：会话服务端吊销、笔记搜索、分屏实时预览、Markdown 导出、代码块复制。
 
