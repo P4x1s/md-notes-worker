@@ -1,11 +1,7 @@
-// 密码哈希（PBKDF2-SHA256）与 HMAC 签名会话
+// 常量时间比较与 HMAC 签名会话
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
-const ITERATIONS = 100000;
-
-// 格式合法但永远校验失败的哈希：用于用户不存在时抵消时序差异
-const DUMMY_HASH = 'pbkdf2$100000$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 
 function toBase64Url(bytes) {
   let binary = '';
@@ -21,50 +17,24 @@ function fromBase64Url(value) {
   return bytes;
 }
 
-function constantTimeEqual(a, b) {
+function constantTimeEqualBytes(a, b) {
   if (a.length !== b.length) return false;
   let diff = 0;
   for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
   return diff === 0;
 }
 
-async function derive(password, salt, iterations) {
-  const key = await crypto.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, ['deriveBits']);
-  return new Uint8Array(await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', salt, iterations, hash: 'SHA-256' },
-    key,
-    256
-  ));
+// 字符串常量时间比较：先把两侧哈希成等长摘要再逐字节比较，
+// 避免长度差异与首个不同字符位置泄漏时序信息。
+async function digestText(text) {
+  const buf = await crypto.subtle.digest('SHA-256', encoder.encode(text));
+  return new Uint8Array(buf);
 }
 
-export async function hashPassword(password) {
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const hash = await derive(password, salt, ITERATIONS);
-  return `pbkdf2$${ITERATIONS}$${toBase64Url(salt)}$${toBase64Url(hash)}`;
-}
-
-export async function verifyPassword(password, stored) {
-  const parts = (stored || '').split('$');
-  if (parts.length !== 4 || parts[0] !== 'pbkdf2') return false;
-  const iterations = Number(parts[1]);
-  if (!Number.isSafeInteger(iterations) || iterations < 10000 || iterations > 1000000) return false;
-
-  let salt;
-  let expected;
-  try {
-    salt = fromBase64Url(parts[2]);
-    expected = fromBase64Url(parts[3]);
-  } catch {
-    return false;
-  }
-  if (salt.length !== 16 || expected.length !== 32) return false;
-
-  const actual = await derive(password, salt, iterations);
-  return constantTimeEqual(actual, expected);
-}
-
-export async function verifyPasswordSafe(password, storedHashOrNull) {
-  return verifyPassword(password, storedHashOrNull || DUMMY_HASH);
+export async function constantTimeEqualTextSafe(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const [da, db] = await Promise.all([digestText(a), digestText(b)]);
+  return constantTimeEqualBytes(da, db);
 }
 
 // 会话登记只存 token 的 SHA-256 摘要，库泄露也无法还原可用 Cookie

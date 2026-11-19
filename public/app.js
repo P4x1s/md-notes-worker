@@ -10,9 +10,8 @@
     editorWrap: document.querySelector('.editor-wrap'),
     authView: $('authView'), mainView: $('mainView'),
     authForm: $('authForm'), authUsername: $('authUsername'),
-    authPassword: $('authPassword'), authInvite: $('authInvite'),
-    inviteRow: $('inviteRow'), authError: $('authError'),
-    authSubmit: $('authSubmit'), authSwitch: $('authSwitch'),
+    authPassword: $('authPassword'),
+    authError: $('authError'), authSubmit: $('authSubmit'),
     who: $('who'), userInitial: $('userInitial'),
     newNoteBtn: $('newNoteBtn'), noteList: $('noteList'),
     searchInput: $('searchInput'), exportBtn: $('exportBtn'),
@@ -397,17 +396,6 @@
     }
   }
 
-  var authMode = 'login';
-  function setAuthMode(mode) {
-    authMode = mode;
-    var registering = mode === 'register';
-    els.inviteRow.hidden = !registering;
-    els.authSubmit.textContent = registering ? '注册并登录' : '登录';
-    els.authSwitch.textContent = registering ? '已有账号？登录' : '没有账号？注册';
-    els.authError.textContent = '';
-    els.authPassword.autocomplete = registering ? 'new-password' : 'current-password';
-  }
-
   els.authForm.addEventListener('submit', async function (event) {
     event.preventDefault();
     els.authError.textContent = '';
@@ -416,26 +404,19 @@
       username: els.authUsername.value.trim(),
       password: els.authPassword.value
     };
-    if (authMode === 'register') payload.inviteCode = els.authInvite.value.trim();
 
     try {
-      var data = await api('/api/auth/' + (authMode === 'register' ? 'register' : 'login'), {
+      var data = await api('/api/auth/login', {
         method: 'POST',
         body: payload
       });
       els.authPassword.value = '';
-      els.authInvite.value = '';
       await enterApp(data.user);
     } catch (error) {
       els.authError.textContent = error.message;
     } finally {
       els.authSubmit.disabled = false;
     }
-  });
-
-  els.authSwitch.addEventListener('click', function (event) {
-    event.preventDefault();
-    setAuthMode(authMode === 'login' ? 'register' : 'login');
   });
 
   els.logoutBtn.addEventListener('click', async function () {

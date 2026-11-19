@@ -12,16 +12,16 @@ export async function findUserById(db, id) {
   ).bind(id).first();
 }
 
-export async function insertUser(db, username, passwordHash) {
-  const duplicate = await db.prepare('SELECT id FROM users WHERE username = ?').bind(username).first();
-  if (duplicate) return { conflict: true };
+// 单用户模式：登录时按环境变量用户名自动建档，密码校验不依赖库内哈希
+export async function getOrCreateUser(db, username) {
+  const existing = await findUserByUsername(db, username);
+  if (existing) return existing;
 
   const now = Date.now();
   const info = await db.prepare(
     'INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)'
-  ).bind(username, passwordHash, now).run();
-
-  return { user: { id: Number(info.meta.last_row_id), username, created_at: now } };
+  ).bind(username, '', now).run();
+  return { id: Number(info.meta.last_row_id), username, created_at: now };
 }
 
 export async function listNotes(db, userId) {

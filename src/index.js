@@ -2,7 +2,7 @@
 
 import { ok, fail, getCookie, sessionCookie, clearSessionCookie, clientIp } from './http.js';
 import { HttpError, readJson, validateUsername, validatePassword, validateNote, parseId } from './validate.js';
-import { hashPassword, verifyPasswordSafe, createSession, readSession, hashToken } from './auth.js';
+import { createSession, readSession, hashToken, constantTimeEqualTextSafe } from './auth.js';
 import { checkRateLimit } from './ratelimit.js';
 import * as db from './db.js';
 
@@ -10,8 +10,6 @@ const COOKIE_NAME = 'session';
 const DEFAULT_SESSION_TTL = 7 * 24 * 3600;
 const LOGIN_LIMIT = 10;
 const LOGIN_WINDOW = 60;
-const REGISTER_LIMIT = 5;
-const REGISTER_WINDOW = 3600;
 
 const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
@@ -56,6 +54,9 @@ function requireConfig(env) {
   if (!env.SESSION_SECRET || env.SESSION_SECRET.length < 16) {
     throw new HttpError(500, 'misconfigured', 'SESSION_SECRET 未配置或长度不足 16');
   }
+  if (!env.ADMIN_USERNAME || !env.ADMIN_PASSWORD) {
+    throw new HttpError(500, 'misconfigured', 'ADMIN_USERNAME / ADMIN_PASSWORD 未配置');
+  }
 }
 
 // 签发会话：签名 Cookie + 服务端登记（摘要入库），使登出可真正吊销
@@ -91,33 +92,6 @@ async function requireUser(request, env) {
 
 // ---------------- 鉴权接口 ----------------
 
-async function handleRegister(request, env) {
-  requireConfig(env);
-
-  const limit = await checkRateLimit(env, clientIp(request), 'register', REGISTER_LIMIT, REGISTER_WINDOW);
-  if (!limit.ok) {
-    return fail(429, 'rate_limited', '注册请求过于频繁，请稍后再试', { 'Retry-After': String(limit.retryAfter) });
-  }
-
-  const body = await readJson(request);
-  const username = typeof body.username === 'string' ? body.username.trim() : body.username;
-  const inputError = validateUsername(username) || validatePassword(body.password);
-  if (inputError) return fail(400, 'invalid_input', inputError);
-
-  // 配置邀请码后开放注册变为受控注册；未配置则不校验
-  if (env.INVITE_CODE && body.inviteCode !== env.INVITE_CODE) {
-    return fail(403, 'invalid_invite', '邀请码不正确');
-  }
-
-  const passwordHash = await hashPassword(body.password);
-  const result = await db.insertUser(env.DB, username, passwordHash);
-  if (result.conflict) return fail(409, 'username_taken', '用户名已被占用');
-
-  const ttl = sessionTtl(env);
-  const cookie = await issueSession(env, result.user, ttl);
-  return ok({ user: result.user }, 201, { 'Set-Cookie': cookie });
-}
-
 async function handleLogin(request, env) {
   requireConfig(env);
 
@@ -130,12 +104,18 @@ async function handleLogin(request, env) {
   if (typeof body.username !== 'string' || typeof body.password !== 'string') {
     return fail(400, 'invalid_input', '请输入用户名和密码');
   }
+  const inputError = validateUsername(body.username.trim()) || validatePassword(body.password);
+  if (inputError) return fail(400, 'invalid_input', inputError);
 
-  const user = await db.findUserByUsername(env.DB, body.username.trim());
-  // 即使用户不存在也做一次等成本运算，降低用户名枚举的时序差异
-  const valid = await verifyPasswordSafe(body.password, user ? user.password_hash : null);
-  if (!user || !valid) return fail(401, 'invalid_credentials', '用户名或密码错误');
+  // 单用户模式：与 Worker 变量/密钥中的 ADMIN_USERNAME / ADMIN_PASSWORD 比较。
+  // 两侧均哈希后常量时间比较，避免时序泄漏匹配进度。
+  const [userMatch, passMatch] = await Promise.all([
+    constantTimeEqualTextSafe(body.username.trim(), env.ADMIN_USERNAME),
+    constantTimeEqualTextSafe(body.password, env.ADMIN_PASSWORD)
+  ]);
+  if (!userMatch || !passMatch) return fail(401, 'invalid_credentials', '用户名或密码错误');
 
+  const user = await db.getOrCreateUser(env.DB, env.ADMIN_USERNAME);
   const ttl = sessionTtl(env);
   const cookie = await issueSession(env, user, ttl);
   // 顺带清理过期登记，避免 sessions 表无限增长
@@ -220,7 +200,6 @@ async function handleDeleteNote(request, env, id) {
 async function handleApi(request, env, path) {
   const method = request.method;
 
-  if (path === '/api/auth/register' && method === 'POST') return handleRegister(request, env);
   if (path === '/api/auth/login' && method === 'POST') return handleLogin(request, env);
   if (path === '/api/auth/logout' && method === 'POST') return handleLogout(request, env);
   if (path === '/api/auth/me' && method === 'GET') return handleMe(request, env);

@@ -3,7 +3,7 @@
 一个可直接运行、按 Typora 视觉风格打磨的云端记事本：登录保护、笔记列表、新建/编辑/删除、标题、Markdown 编辑/预览/分屏、自动保存与保存状态，数据持久化到 D1 并按用户隔离。
 
 > **线上地址**：https://md-notes-demo.cashkeven.workers.dev （账号 `CKevens`）
-> 已部署并验证。注册邀请码为 Worker 运行时 secret `INVITE_CODE`，不写入仓库。从零搭建步骤见 [DEPLOY.md](./DEPLOY.md)。
+> **单用户模式**：无注册功能，登录账号由 Worker 变量/密钥 `ADMIN_USERNAME` / `ADMIN_PASSWORD` 配置，可在 Cloudflare Dashboard 随时修改。从零搭建步骤见 [DEPLOY.md](./DEPLOY.md)。
 
 ## 1. 方案概览
 
@@ -11,8 +11,8 @@
 浏览器 SPA  ──同源 JSON API──▶  Cloudflare Worker
    │                                  │
    │  marked + DOMPurify               ├─ D1：users / notes / sessions
-   │  （仅前端渲染 Markdown）           ├─ KV：登录/注册限流计数
-   └──── Workers Static Assets ◀──────┴─ Secrets：SESSION_SECRET / INVITE_CODE
+   │  （仅前端渲染 Markdown）           ├─ KV：登录限流计数
+   └──── Workers Static Assets ◀──────┴─ Secrets：SESSION_SECRET / ADMIN_USERNAME / ADMIN_PASSWORD
 ```
 
 选择 Workers 而非 Pages 的原因：API、静态资源、鉴权与限流集中在一个部署单元，依赖最少。Markdown 原文入库、HTML 只在浏览器生成并消毒，不把不可信 HTML 写入服务端。
@@ -23,7 +23,7 @@
 
 | 类别 | 内容 |
 | --- | --- |
-| 账号 | 邀请码受控注册、登录、退出（服务端吊销会话）、刷新保持登录 |
+| 账号 | 单用户登录（凭证来自 Worker 变量/密钥）、退出（服务端吊销会话）、刷新保持登录 |
 | 笔记 | 列表（标题/摘要/更新时间）、搜索标题与摘要、打开任意记录、新建、编辑、删除 |
 | 编辑 | 标题输入、编辑/预览/分屏实时预览、代码块一键复制、导出 `.md` 文件 |
 | 保存 | 800ms 防抖自动保存、Ctrl+S 立即保存、状态提示、失败可重试、离开页提醒 |
@@ -96,7 +96,7 @@ CREATE INDEX idx_sessions_user ON sessions(user_id);
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/api/auth/register` | 注册（需邀请码，若已配置）并自动登录 |
+| POST | `/api/auth/login` | 登录（凭证与 `ADMIN_USERNAME` / `ADMIN_PASSWORD` 常量时间比对） |
 | POST | `/api/auth/login` | 登录，下发会话 Cookie 并登记会话 |
 | POST | `/api/auth/logout` | 删除服务端会话登记并清除 Cookie，旧 Cookie 立即失效 |
 | GET | `/api/auth/me` | 恢复当前登录态 |
@@ -132,7 +132,7 @@ CREATE INDEX idx_sessions_user ON sessions(user_id);
 
 ### 5.5 限流与错误处理
 
-- KV 固定窗口：登录 10 次/分钟、注册 5 次/小时（按 `CF-Connecting-IP`），超限返回 429 + `Retry-After`。KV 故障时放行并记录日志，避免锁死登录。
+- KV 固定窗口：登录 10 次/分钟（按 `CF-Connecting-IP`），超限返回 429 + `Retry-After`。KV 故障时放行并记录日志，避免锁死登录。
 - 请求体校验：`Content-Length` 与实际字节双重限制 256 KB；笔记内容 200 KB、标题 200 字符。
 - 统一 `try/catch`：业务错误返回对应 4xx，未知异常只返回 500 通用文案，堆栈仅写服务端日志。
 
@@ -148,7 +148,7 @@ npm run db:init:local
 npm run dev
 ```
 
-打开 `http://localhost:8787`，切换到“注册”，邀请码取 `.dev.vars` 中的 `INVITE_CODE`（当前本地值为 `uPHY8jyN_KK5LljJ`）。
+打开 `http://localhost:8787`，用 `.dev.vars` 中的 `ADMIN_USERNAME` / `ADMIN_PASSWORD` 登录（本地默认 `admin` / `LocalDev-Passw0rd-2026`）。
 
 > `.dev.vars` 含本地密钥，已加入 `.gitignore`。部署前必须重新生成生产密钥，不要复用本地值。
 
@@ -166,10 +166,12 @@ npm run dev
 3. 写入密钥（不要写进 `wrangler.toml` 或代码仓库）：
    ```bash
    npx wrangler secret put SESSION_SECRET   # 随机 ≥32 字符
-   npx wrangler secret put INVITE_CODE
+   npx wrangler secret put ADMIN_USERNAME   # 登录用户名
+   npx wrangler secret put ADMIN_PASSWORD   # 登录密码（强密码 ≥8 字符）
    ```
+   也可在 Dashboard → Worker → Settings → Variables and Secrets 中添加/修改，改后立即生效，无需重新部署。
 4. 部署：`npm run deploy`。脚本固定带 `--keep-vars` —— `wrangler deploy` 默认会清空 Dashboard 上的变量，不带该参数会丢配置。
-5. 端到端验证：打开 `<worker>.workers.dev`，完成注册 → 新建 → 编辑 → 刷新确认内容与登录态保留 → 退出后用旧会话确认 401 → 预览确认 Markdown 渲染。不要只以“部署命令成功”为准。
+5. 端到端验证：打开 `<worker>.workers.dev`，用配置的管理员凭证登录 → 新建 → 编辑 → 刷新确认内容与登录态保留 → 退出后用旧会话确认 401 → 预览确认 Markdown 渲染。不要只以“部署命令成功”为准。
 
 ## 8. 安全设计汇总
 
@@ -179,7 +181,7 @@ npm run dev
 | 越权读取/篡改 | SQL 层强制 `user_id` 条件 | 跨用户返回 404 |
 | 密码泄露 | PBKDF2 + 随机盐 + 常量时间比较 | 生产必须强随机 `SESSION_SECRET` |
 | 会话伪造/窃取 | HMAC 验签、HttpOnly、Secure、SameSite=Lax、库内只存摘要 | 支持单会话吊销，不做全设备强制登出 |
-| 注册滥用 | 邀请码 + 按 IP 限流 | KV 最终一致性，限流为近似计数 |
+| 凭证泄露 | `ADMIN_PASSWORD` 为 secret 不入库；改动只需在 Dashboard 更新，立即生效 |
 | Markdown XSS | DOMPurify + 本地依赖 + CSP | CSP 的 `style-src` 含 `unsafe-inline` |
 | 超大请求 | Content-Length + 实际字节双重校验 | 单笔记 200 KB |
 | 信息泄露 | 通用错误文案、堆栈不入响应 | 日志保留在 Worker |
@@ -191,7 +193,7 @@ npm run dev
 
 已完成的迭代项：会话服务端吊销、笔记搜索、分屏实时预览、Markdown 导出、代码块复制。
 
-按优先级建议继续：Turnstile 接入注册/登录 → 版本历史与回收站 → 富文本行内编辑。
+按优先级建议继续：Turnstile 接入登录 → 版本历史与回收站 → 富文本行内编辑。
 
 ## 10. 界面说明（Typora 风格）
 
@@ -203,8 +205,8 @@ npm run dev
 
 本地已实际运行验证：
 
-- `bash scripts/smoke-test.sh`：23 项全部通过，覆盖 D1 初始化、双用户注册、未登录 401、新建、跨用户 404、列表隔离、编辑持久化、删除、静态资源、Cookie 属性、CSP，以及登出后旧 Cookie 失效、其他会话不受影响。
-- 无头 Edge 端到端：登录、注册两篇笔记、搜索过滤（2 条→1 条）、分屏布局、代码块复制按钮、导出按钮、主题切换、字数/行数统计均验证通过；截图见 `ui-final-*.png`。
+- `bash scripts/smoke-test.sh`：单用户模式 24 项全部通过，覆盖 D1 初始化、登录成功/失败路径、注册端点移除（404）、未登录 401、新建、编辑持久化、删除、静态资源、Cookie 属性、CSP，以及登出后旧 Cookie 失效、另一会话不受影响。
+- 无头 Edge 端到端：登录、两篇笔记、搜索过滤（2 条→1 条）、分屏布局、代码块复制按钮、导出按钮、主题切换、字数/行数统计均验证通过；截图见 `ui-final-*.png`（截图为早期多用户版界面，当前登录页已无注册/邀请码元素）。
 - Markdown 消毒：`<script>` / `onerror` / `javascript:` URL 均被清除，脚本未执行，标题正常渲染（`PWNED=0|SCRIPT=0|ONERROR=0|JSURL=0|H1=1`）。
 
-验证过程中发现并修复两个真实缺陷：`ratelimit.js` 中 `count` 变量作用域错误导致注册/登录 500；分屏模式遗漏切换布局 class 导致并排布局未生效。
+验证过程中发现并修复两个真实缺陷：`ratelimit.js` 中 `count` 变量作用域错误导致登录 500；分屏模式遗漏切换布局 class 导致并排布局未生效。
