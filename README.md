@@ -26,6 +26,10 @@
 | ![分屏模式](ui-final-split.png) | ![深色预览](ui-final-dark-preview.png) |
 | ![深色分屏](ui-final-dark-split.png) | ![偏好设置](ui-final-settings.png) |
 | ![设置 · 代码面板](ui-final-settings-code.png) | ![设置 · 关于](ui-final-settings-about.png) |
+| 手机 · 预览 | 手机 · 抽屉侧栏 |
+| ![手机预览](ui-mobile-preview.png) | ![手机抽屉](ui-mobile-drawer.png) |
+| 手机 · 偏好设置（全屏） | Pad · 预览 |
+| ![手机设置](ui-mobile-settings.png) | ![Pad 预览](ui-pad-preview.png) |
 
 ## 2. 已实现功能
 
@@ -39,6 +43,7 @@
 | 偏好设置 | Typora 风格设置弹窗（Ctrl + ,）：主题模式、显示/隐藏菜单栏、正文字体/字号/行距、代码字体/字号、行号/语言标签/复制按钮/活动行高亮，全部实时生效并持久化 |
 | 保存 | 800ms 防抖自动保存、Ctrl+S 立即保存、状态提示、失败可重试、离开页提醒 |
 | 界面 | Typora 风格：窄侧栏、居中纸张、精细 Markdown 排版、浅色/深色主题 + 按时段自动切换、侧栏收起、当前行高亮、字数与行数 |
+| 响应式 | 手机（≤680px：抽屉侧栏 + 遮罩、顶栏自动换行、设置弹窗全屏、触控目标 ≥40px、复制按钮常显、dvh 动态视口）、Pad（≤1024px 收窄留白）、桌面三端适配 |
 | 持久化 | Cloudflare D1（SQLite），按 `user_id` 强制隔离 |
 | 安全 | Turnstile 人机验证、签名会话 + 服务端登记、输入校验、XSS 防护、CSP、限流、统一错误处理 |
 
