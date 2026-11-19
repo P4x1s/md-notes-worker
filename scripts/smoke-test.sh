@@ -119,6 +119,32 @@ curl -s -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/notes/$ID" -H "Cooki
 curl -s -o /dev/null -w '%{http_code}' "$BASE/api/notes/$ID" -H "Cookie: $CA" > "$TMP/codeGetAfter"
 [ "$(cat "$TMP/codeGetAfter")" = '404' ] && pass '删除后读取返回 404' || fail '删除未生效'
 
+echo '== 9.5 自定义显示名 =='
+curl -s -o /dev/null -w '%{http_code}' -X PUT "$BASE/api/auth/profile" \
+  -H 'Content-Type: application/json' \
+  -d '{"display_name":"某某"}' > "$TMP/codeProfAnon"
+[ "$(cat "$TMP/codeProfAnon")" = '401' ] && pass '未登录改显示名被拒（401）' || fail 'profile 未鉴权'
+curl -s -o "$TMP/bProfBad" -w '%{http_code}' -X PUT "$BASE/api/auth/profile" \
+  -H "Cookie: $CA" -H 'Content-Type: application/json' \
+  -d '{"display_name":"   "}' > "$TMP/codeProfBad"
+[ "$(cat "$TMP/codeProfBad")" = '400' ] && pass '空白显示名被拒（400）' || fail '空白显示名未拦截'
+LONGNAME=$(printf 'x%.0s' $(seq 1 33))
+curl -s -o "$TMP/bProfBad2" -w '%{http_code}' -X PUT "$BASE/api/auth/profile" \
+  -H "Cookie: $CA" -H 'Content-Type: application/json' \
+  -d "{\"display_name\":\"$LONGNAME\"}" > "$TMP/codeProfBad2"
+[ "$(cat "$TMP/codeProfBad2")" = '400' ] && pass '过长显示名被拒（400）' || fail '长度校验未生效'
+curl -s -o "$TMP/bProf" -w '%{http_code}' -X PUT "$BASE/api/auth/profile" \
+  -H "Cookie: $CA" -H 'Content-Type: application/json' \
+  -d '{"display_name":"  pen tester 书房  "}' > "$TMP/codeProf"
+[ "$(cat "$TMP/codeProf")" = '200' ] && pass '设置显示名返回 200' || fail '设置显示名失败'
+has "$TMP/bProf" 'pen tester 书房' && pass '显示名已去首尾空白并持久化' || fail '显示名未持久化'
+curl -s "$BASE/api/auth/me" -H "Cookie: $CB" > "$TMP/bMe"
+has "$TMP/bMe" '"display_name":"pen tester 书房"' && pass '/api/auth/me 返回显示名' || fail 'me 未返回显示名'
+curl -s -o "$TMP/bProfReset" -w '%{http_code}' -X PUT "$BASE/api/auth/profile" \
+  -H "Cookie: $CA" -H 'Content-Type: application/json' \
+  -d '{"display_name":"记事本主人"}' > "$TMP/codeProfReset"
+has "$TMP/bProfReset" '"display_name":"记事本主人"' && pass '显示名可再次修改' || fail '显示名二次修改失败'
+
 echo '== 10. 静态资源与安全头 =='
 curl -s "$BASE/" > "$TMP/index"
 has "$TMP/index" 'Markdown 记事本' && pass '首页可访问' || fail '首页异常'
@@ -129,6 +155,15 @@ has "$TMP/hA" 'HttpOnly' && pass 'Cookie 含 HttpOnly' || fail 'Cookie 缺 HttpO
 has "$TMP/hA" 'Secure' && pass 'Cookie 含 Secure' || fail 'Cookie 缺 Secure'
 has "$TMP/hA" 'SameSite=Lax' && pass 'Cookie 含 SameSite=Lax' || fail 'Cookie 缺 SameSite'
 has "$TMP/hA" 'content-security-policy' && pass '响应含 CSP' || fail '响应缺 CSP'
+has "$TMP/index" 'vendor/highlight.min.js' && pass '已引入 highlight.js' || fail 'highlight.js 未引入'
+has "$TMP/index" 'vendor/hljs-extra.min.js' && pass '已引入扩展语言包' || fail '扩展语言包未引入'
+has "$TMP/index" 'langPopup' && pass '语言补全弹窗元素存在' || fail '弹窗元素缺失'
+has "$TMP/index" 'id="who"' && fail '顶栏仍显示用户名' || pass '顶栏不再显示用户名'
+has "$TMP/index" 'displayName' && pass '底部显示名元素存在' || fail '底部显示名元素缺失'
+curl -s -o /dev/null -w '%{http_code}' "$BASE/vendor/highlight.min.js" > "$TMP/codeHljs"
+curl -s -o /dev/null -w '%{http_code}' "$BASE/vendor/hljs-extra.min.js" > "$TMP/codeExtra"
+[ "$(cat "$TMP/codeHljs")" = '200' ] && [ "$(cat "$TMP/codeExtra")" = '200' ] \
+  && pass '高亮静态资源可访问' || fail '高亮静态资源 404'
 
 echo '== 11. 会话吊销 =='
 curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/auth/logout" -H "Cookie: $CA" > "$TMP/codeLogout"

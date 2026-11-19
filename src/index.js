@@ -1,7 +1,7 @@
 // Cloudflare Worker 入口：API 路由 + 静态资源 + 统一安全响应头
 
 import { ok, fail, getCookie, sessionCookie, clearSessionCookie, clientIp } from './http.js';
-import { HttpError, readJson, validateUsername, validatePassword, validateNote, parseId } from './validate.js';
+import { HttpError, readJson, validateUsername, validatePassword, validateDisplayName, validateNote, parseId } from './validate.js';
 import { createSession, readSession, hashToken, constantTimeEqualTextSafe } from './auth.js';
 import { checkRateLimit } from './ratelimit.js';
 import { turnstileEnabled, verifyTurnstileToken } from './turnstile.js';
@@ -139,7 +139,7 @@ async function handleLogin(request, env) {
   // 顺带清理过期登记，避免 sessions 表无限增长
   try { await db.deleteExpiredSessions(env.DB); } catch (ignore) { /* 不影响登录 */ }
   return ok({
-    user: { id: user.id, username: user.username, created_at: user.created_at }
+    user: { id: user.id, username: user.username, display_name: user.display_name || null, created_at: user.created_at }
   }, 200, { 'Set-Cookie': cookie });
 }
 
@@ -160,6 +160,20 @@ async function handleLogout(request, env) {
 async function handleMe(request, env) {
   const { user, response } = await requireUser(request, env);
   return response || ok({ user });
+}
+
+// 自定义显示名：仅改库内展示字段，不影响登录凭证（凭证始终来自环境变量）
+async function handleProfile(request, env) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+
+  const body = await readJson(request);
+  const displayName = typeof body.display_name === 'string' ? body.display_name.trim() : '';
+  const inputError = validateDisplayName(displayName);
+  if (inputError) return fail(400, 'invalid_input', inputError);
+
+  const updated = await db.updateDisplayName(env.DB, user.id, displayName);
+  return ok({ user: updated });
 }
 
 // 登录页配置：告知前端是否启用人机验证及站点密钥（site key 本身是公开信息）
@@ -248,6 +262,7 @@ async function handleApi(request, env, path) {
   if (path === '/api/auth/login' && method === 'POST') return handleLogin(request, env);
   if (path === '/api/auth/logout' && method === 'POST') return handleLogout(request, env);
   if (path === '/api/auth/me' && method === 'GET') return handleMe(request, env);
+  if (path === '/api/auth/profile' && method === 'PUT') return handleProfile(request, env);
   if (path === '/api/auth/config' && method === 'GET') return handleAuthConfig(env);
 
   if (path === '/api/notes' && method === 'GET') return handleListNotes(request, env);

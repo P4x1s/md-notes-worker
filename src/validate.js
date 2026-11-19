@@ -39,6 +39,15 @@ export function validatePassword(value) {
   return null;
 }
 
+// 显示名：仅用于界面展示，放宽字符限制但禁止控制字符与首尾空白
+export function validateDisplayName(value) {
+  if (typeof value !== 'string') return '显示名必须是字符串';
+  const name = value.trim();
+  if (name.length < 1 || name.length > 32) return '显示名长度需在 1-32 之间';
+  if (/[\u0000-\u001f\u007f]/.test(name)) return '显示名不能包含控制字符';
+  return null;
+}
+
 export function validateNote(title, content) {
   if (typeof title !== 'string') return '标题必须是字符串';
   if (title.length > LIMITS.titleMax) return `标题不能超过 ${LIMITS.titleMax} 个字符`;

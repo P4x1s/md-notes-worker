@@ -8,8 +8,16 @@ export async function findUserByUsername(db, username) {
 
 export async function findUserById(db, id) {
   return db.prepare(
-    'SELECT id, username, created_at FROM users WHERE id = ?'
+    'SELECT id, username, display_name, created_at FROM users WHERE id = ?'
   ).bind(id).first();
+}
+
+// 更新自定义显示名（仅界面展示用，登录凭证仍是环境变量中的用户名/密码）
+export async function updateDisplayName(db, userId, displayName) {
+  await db.prepare(
+    'UPDATE users SET display_name = ? WHERE id = ?'
+  ).bind(displayName, userId).run();
+  return findUserById(db, userId);
 }
 
 // 单用户模式：登录时按环境变量用户名自动建档，密码校验不依赖库内哈希

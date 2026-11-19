@@ -33,13 +33,16 @@
           <span class="brand-mark">M</span>
           <span class="brand-text">Markdown <em>记事本</em></span>
         </div>
-        <span id="who" class="who"></span>
       </div>
       <input id="searchInput" class="search-input" type="search" placeholder="搜索笔记..." autocomplete="off" aria-label="搜索笔记">
       <button id="newNoteBtn" class="new-note" type="button"><span class="plus">+</span> 新建笔记</button>
       <div id="noteList" class="note-list" aria-label="笔记列表"></div>
       <div class="sidebar-foot">
-        <span class="user-dot" id="userInitial"></span>
+        <div class="foot-user">
+          <span class="user-dot" id="userInitial"></span>
+          <span id="displayName" class="display-name" title="点击修改显示名" tabindex="0"></span>
+          <input id="displayNameInput" class="display-name-input" maxlength="32" hidden aria-label="自定义显示名">
+        </div>
         <button id="logoutBtn" class="logout" type="button">退出登录</button>
       </div>
     </aside>
@@ -55,7 +58,7 @@
             <button type="button" data-mode="split" class="tab" role="tab">分屏</button>
           </div>
           <button id="exportBtn" class="icon-btn" type="button" title="导出为 Markdown 文件">导出</button>
-          <button id="themeToggle" class="icon-btn" type="button" title="切换浅色 / 深色主题">深色</button>
+          <button id="themeToggle" class="icon-btn" type="button" title="主题循环切换：自动（按时段深浅）→ 浅色 → 深色">自动</button>
           <button id="deleteBtn" class="icon-btn danger" type="button" title="删除当前笔记">删除</button>
         </div>
       </header>
@@ -73,6 +76,7 @@
               <div id="activeLine" class="active-line" aria-hidden="true"></div>
               <textarea id="noteContent" class="content-input" spellcheck="false"
                         placeholder="用 Markdown 书写。支持 # 标题、**粗体**、- 列表、``` 代码块 ……"></textarea>
+              <div id="langPopup" class="lang-popup" hidden></div>
               <div id="preview" class="preview markdown-body" hidden></div>
               <div id="splitPreview" class="split-preview markdown-body" hidden></div>
             </div>
@@ -93,6 +97,8 @@
 
   <script src="/vendor/marked.min.js"></script>
   <script src="/vendor/purify.min.js"></script>
+  <script src="/vendor/highlight.min.js"></script>
+  <script src="/vendor/hljs-extra.min.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

@@ -13,7 +13,8 @@
     authPassword: $('authPassword'),
     tsWidget: $('tsWidget'),
     authError: $('authError'), authSubmit: $('authSubmit'),
-    who: $('who'), userInitial: $('userInitial'),
+    displayName: $('displayName'), displayNameInput: $('displayNameInput'),
+    userInitial: $('userInitial'), langPopup: $('langPopup'),
     newNoteBtn: $('newNoteBtn'), noteList: $('noteList'),
     searchInput: $('searchInput'), exportBtn: $('exportBtn'),
     logoutBtn: $('logoutBtn'), emptyState: $('emptyState'),
@@ -49,20 +50,32 @@
     });
   }
 
-  // ---------- 主题 ----------
-  function applyTheme(theme) {
-    var selected = theme === 'dark' ? 'dark' : 'light';
-    document.documentElement.dataset.theme = selected;
-    els.themeToggle.textContent = selected === 'light' ? '深色' : '浅色';
-    try { localStorage.setItem('mdnotes-theme', selected); } catch (ignore) { /* 隐私模式下忽略 */ }
+  // ---------- 主题（三态循环：自动 → 浅色 → 深色） ----------
+  // 「自动」按时段切换：19:00–次日 07:00 深色，其余浅色；每分钟复查一次
+  var THEME_KEY = 'mdnotes-theme';
+  var themePref = 'auto';
+
+  function autoTheme() {
+    var hour = new Date().getHours();
+    return (hour >= 19 || hour < 7) ? 'dark' : 'light';
   }
-  function storedTheme() {
-    try { return localStorage.getItem('mdnotes-theme'); } catch (ignore) { return null; }
+  function applyTheme() {
+    var resolved = themePref === 'auto' ? autoTheme() : themePref;
+    document.documentElement.dataset.theme = resolved;
+    els.themeToggle.textContent = themePref === 'auto' ? '自动' : (resolved === 'light' ? '浅色' : '深色');
+    els.themeToggle.dataset.mode = themePref;
+    try { localStorage.setItem(THEME_KEY, themePref); } catch (ignore) { /* 隐私模式下忽略 */ }
   }
-  applyTheme(storedTheme() || 'light');
+  try { themePref = localStorage.getItem(THEME_KEY) || 'auto'; } catch (ignore) { themePref = 'auto'; }
+  if (themePref !== 'auto' && themePref !== 'light' && themePref !== 'dark') themePref = 'auto';
+  applyTheme();
   els.themeToggle.addEventListener('click', function () {
-    applyTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light');
+    themePref = themePref === 'auto' ? 'light' : (themePref === 'light' ? 'dark' : 'auto');
+    applyTheme();
   });
+  setInterval(function () {
+    if (themePref === 'auto') applyTheme();
+  }, 60000);
   els.sidebarToggle.addEventListener('click', function () {
     els.appShell.classList.toggle('sidebar-collapsed');
   });
@@ -239,6 +252,149 @@
     updateActiveLine();
   }
 
+  // ---------- 代码块语言自动补全（Typora 风格） ----------
+  // 在 ``` / ~~~ 围栏行输入语言前缀时弹出候选列表；↑↓ 选择、Enter 确认、Esc 关闭
+  var LANGS = (window.hljs && typeof window.hljs.listLanguages === 'function')
+    ? window.hljs.listLanguages().slice() : [];
+  var langState = { open: false, items: [], index: 0, info: null };
+
+  // 测量光标像素位置：镜像 div 复刻文本域排版，光标处放置零宽标记
+  var langMirror = document.createElement('div');
+  langMirror.className = 'lang-mirror';
+  document.body.appendChild(langMirror);
+
+  function caretPixel() {
+    var ta = els.noteContent;
+    langMirror.style.width = ta.clientWidth + 'px';
+    langMirror.textContent = ta.value.slice(0, ta.selectionStart);
+    var marker = document.createElement('span');
+    marker.textContent = '\u200b';
+    langMirror.appendChild(marker);
+    return { left: marker.offsetLeft, top: marker.offsetTop };
+  }
+
+  function fenceLineInfo() {
+    var ta = els.noteContent;
+    var value = ta.value;
+    var lineStart = value.lastIndexOf('\n', ta.selectionStart - 1) + 1;
+    var lineEnd = value.indexOf('\n', ta.selectionStart);
+    if (lineEnd === -1) lineEnd = value.length;
+    var match = value.slice(lineStart, lineEnd).match(/^(`{3,}|~{3,})([A-Za-z0-9_+#.\-]*)$/);
+    if (!match) return null;
+    return { lineStart: lineStart, lineEnd: lineEnd, fence: match[1], prefix: match[2] };
+  }
+
+  function hideLangPopup() {
+    langState.open = false;
+    els.langPopup.hidden = true;
+  }
+
+  function renderLangItems() {
+    els.langPopup.textContent = '';
+    langState.items.forEach(function (lang, i) {
+      var item = document.createElement('div');
+      item.className = 'lang-item' + (i === langState.index ? ' active' : '');
+      item.textContent = lang;
+      item.addEventListener('mousedown', function (event) {
+        event.preventDefault(); // 防止文本域失焦
+        applyLangChoice(lang);
+      });
+      els.langPopup.appendChild(item);
+    });
+    var active = els.langPopup.querySelector('.lang-item.active');
+    if (active && active.scrollIntoView) active.scrollIntoView({ block: 'nearest' });
+  }
+
+  function positionLangPopup() {
+    var ta = els.noteContent;
+    var lineH = parseFloat(window.getComputedStyle(ta).lineHeight) || 26;
+    var pixel = caretPixel();
+    var left = pixel.left - ta.scrollLeft;
+    var top = pixel.top - ta.scrollTop + lineH + 4;
+    var popupW = 230;
+    left = Math.min(Math.max(left, 0), Math.max(ta.clientWidth - popupW - 4, 0));
+    var popupH = els.langPopup.offsetHeight || 200;
+    if (top + popupH > ta.clientHeight - 4) {
+      top = Math.max(pixel.top - ta.scrollTop - popupH - 4, 0); // 下方放不下则上翻
+    }
+    els.langPopup.style.left = left + 'px';
+    els.langPopup.style.top = top + 'px';
+  }
+
+  function updateLangPopup() {
+    var ta = els.noteContent;
+    if (ta.hidden || !LANGS.length) { hideLangPopup(); return; }
+    var info = fenceLineInfo();
+    if (!info || ta.selectionStart < info.lineStart + info.fence.length) {
+      hideLangPopup();
+      return;
+    }
+    var query = info.prefix.toLowerCase();
+    var items = query
+      ? LANGS.filter(function (lang) { return lang.indexOf(query) === 0; })
+      : LANGS;
+    if (!items.length) { hideLangPopup(); return; }
+    langState.open = true;
+    langState.items = items;
+    langState.index = 0;
+    langState.info = info;
+    renderLangItems();
+    els.langPopup.hidden = false;
+    positionLangPopup();
+  }
+
+  function applyLangChoice(lang) {
+    var ta = els.noteContent;
+    var info = langState.info;
+    if (!info) { hideLangPopup(); return; }
+    var value = ta.value;
+    var before = value.slice(0, info.lineStart);
+    var after = value.slice(info.lineEnd);
+    var rest = value.slice(info.lineEnd);
+    var nl = rest.indexOf('\n');
+    var nextLine = (nl === -1 ? '' : rest.slice(nl + 1).split('\n')[0]).trim();
+    var closeRe = info.fence.charAt(0) === '`' ? /^`{3,}$/ : /^~{3,}$/;
+    var hasClose = closeRe.test(nextLine);
+
+    var openLine = info.fence + lang.toLowerCase();
+    // 与 Typora 一致：自动补全配对围栏，光标落到块内空行
+    var replacement = hasClose ? openLine : openLine + '\n\n' + info.fence;
+    ta.value = before + replacement + after;
+    var caret = hasClose
+      ? before.length + openLine.length
+      : before.length + openLine.length + 1;
+    ta.selectionStart = ta.selectionEnd = caret;
+    hideLangPopup();
+    refreshEditorMeta();
+    if (state.mode === 'split') renderMarkdown(els.splitPreview);
+    scheduleSave();
+    ta.focus();
+  }
+
+  els.noteContent.addEventListener('keydown', function (event) {
+    if (!langState.open) return;
+    var total = langState.items.length;
+    if (event.key === 'ArrowDown' && total) {
+      event.preventDefault();
+      langState.index = (langState.index + 1) % total;
+      renderLangItems();
+    } else if (event.key === 'ArrowUp' && total) {
+      event.preventDefault();
+      langState.index = (langState.index - 1 + total) % total;
+      renderLangItems();
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      applyLangChoice(langState.items[langState.index]);
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      hideLangPopup();
+    }
+  });
+
+  document.addEventListener('mousedown', function (event) {
+    if (langState.open && !els.langPopup.contains(event.target)) hideLangPopup();
+  });
+
   // ---------- 列表 ----------
   function renderList() {
     els.noteList.textContent = '';
@@ -332,7 +488,16 @@
       FORBID_TAGS: ['style', 'form', 'input', 'button', 'textarea', 'select', 'iframe', 'object', 'embed'],
       FORBID_ATTR: ['style']
     });
+    highlightCodeBlocks(target);
     addCodeCopyButtons(target);
+  }
+
+  // ---------- 代码高亮（highlight.js，191 种语言，随主题切换配色） ----------
+  function highlightCodeBlocks(target) {
+    if (!window.hljs || typeof window.hljs.highlightElement !== 'function') return;
+    Array.prototype.forEach.call(target.querySelectorAll('pre code'), function (block) {
+      try { window.hljs.highlightElement(block); } catch (ignore) { /* 单块失败不影响整体 */ }
+    });
   }
 
   function renderPreview() {
@@ -365,6 +530,7 @@
       els.noteContent.value = state.current.content;
       els.noteContent.selectionStart = 0;
       els.noteContent.selectionEnd = 0;
+      hideLangPopup();
       els.docCrumb.textContent = '我的笔记 / ' + state.current.title;
       renderPreview();
       renderList();
@@ -466,10 +632,54 @@
     });
   }
 
+  // ---------- 底部用户区：显示名渲染与内联编辑 ----------
+  function renderFootUser() {
+    var name = (state.me && (state.me.display_name || state.me.username)) || '?';
+    els.displayName.textContent = name;
+    els.userInitial.textContent = name.charAt(0);
+  }
+
+  var nameEditing = false;
+
+  function startNameEdit() {
+    if (nameEditing || !state.me) return;
+    nameEditing = true;
+    els.displayNameInput.value = state.me.display_name || '';
+    els.displayName.hidden = true;
+    els.displayNameInput.hidden = false;
+    els.displayNameInput.focus();
+    els.displayNameInput.select();
+  }
+
+  function finishNameEdit() {
+    nameEditing = false;
+    els.displayNameInput.hidden = true;
+    els.displayName.hidden = false;
+    renderFootUser();
+  }
+
+  async function commitNameEdit() {
+    if (!nameEditing) return;
+    var value = els.displayNameInput.value.trim();
+    var previous = state.me.display_name || '';
+    if (!value || value === previous) { finishNameEdit(); return; }
+    try {
+      var data = await api('/api/auth/profile', {
+        method: 'PUT',
+        body: { display_name: value }
+      });
+      state.me = data.user;
+      finishNameEdit();
+      setStatus('saved', '显示名已更新');
+    } catch (error) {
+      finishNameEdit();
+      setStatus('error', '显示名保存失败：' + error.message);
+    }
+  }
+
   async function enterApp(user) {
     state.me = user;
-    els.who.textContent = user.username;
-    els.userInitial.textContent = (user.username || '?').charAt(0);
+    renderFootUser();
     showMain();
     try {
       await loadNotes();
@@ -477,6 +687,24 @@
       setStatus('error', '加载笔记失败：' + error.message);
     }
   }
+
+  els.displayName.addEventListener('click', startNameEdit);
+  els.displayName.addEventListener('keydown', function (event) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      startNameEdit();
+    }
+  });
+  els.displayNameInput.addEventListener('keydown', function (event) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      commitNameEdit();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      finishNameEdit();
+    }
+  });
+  els.displayNameInput.addEventListener('blur', commitNameEdit);
 
   els.authForm.addEventListener('submit', async function (event) {
     event.preventDefault();
@@ -516,6 +744,7 @@
   });
 
   els.logoutBtn.addEventListener('click', async function () {
+    if (nameEditing) finishNameEdit();
     if (state.pending) flushSave();
     try {
       await api('/api/auth/logout', { method: 'POST' });
@@ -535,13 +764,17 @@
 
   els.noteContent.addEventListener('input', function () {
     refreshEditorMeta();
+    updateLangPopup();
     if (state.mode === 'split') renderMarkdown(els.splitPreview);
     scheduleSave();
   });
   ['click', 'keyup', 'select'].forEach(function (eventName) {
     els.noteContent.addEventListener(eventName, updateActiveLine);
   });
-  els.noteContent.addEventListener('scroll', updateActiveLine);
+  els.noteContent.addEventListener('scroll', function () {
+    updateActiveLine();
+    hideLangPopup();
+  });
 
   els.saveStatus.addEventListener('click', function () {
     if (els.saveStatus.dataset.kind === 'error' || els.saveStatus.dataset.kind === 'unsaved') flushSave();
