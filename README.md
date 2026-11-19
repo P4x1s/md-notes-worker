@@ -151,6 +151,8 @@ npm run dev
 
 ## 7. 部署要点
 
+> 完整的从零部署图文步骤（含 API Token 权限、GitHub Secrets、两种部署方式、验证清单与排错）见 **[DEPLOY.md](./DEPLOY.md)**。下面是指令速查。
+
 1. 创建资源并回填 `wrangler.toml`：
    ```bash
    npx wrangler d1 create md-notes-db
