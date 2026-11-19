@@ -7,15 +7,15 @@ compatibility_date = "2025-04-01"
 directory = "./public"
 binding = "ASSETS"
 
-# 本地开发可直接用下面的占位 ID；部署前必须替换为真实 ID
+# 生产资源（账号 CKevens / e427e1f610cf8d3901de877fb3993eb2）
 [[d1_databases]]
 binding = "DB"
 database_name = "md-notes-db"
-database_id = "37332cc5-d6c0-4f2f-9fa0-9de97ac28559"
+database_id = "f06cf269-ed99-43ee-99ac-1c3b8135a4e8"
 
 [[kv_namespaces]]
 binding = "RATE_LIMIT"
-id = "95d530c2-a678-435a-a7c2-a986560a15e1"
+id = "487efaed395c49dcbdbf612265c4611a"
 
 # 非敏感配置可写在这里；SESSION_SECRET / INVITE_CODE 必须用 secret
 [vars]

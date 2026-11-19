@@ -2,6 +2,9 @@
 
 一个可直接运行、按 Typora 视觉风格打磨的云端记事本：登录保护、笔记列表、新建/编辑/删除、标题、Markdown 编辑/预览/分屏、自动保存与保存状态，数据持久化到 D1 并按用户隔离。
 
+> **线上地址**：https://md-notes-demo.cashkeven.workers.dev （账号 `CKevens`）
+> 已部署并验证。注册邀请码为 Worker 运行时 secret `INVITE_CODE`，不写入仓库。从零搭建步骤见 [DEPLOY.md](./DEPLOY.md)。
+
 ## 1. 方案概览
 
 ```
