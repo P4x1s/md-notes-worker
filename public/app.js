@@ -19,6 +19,7 @@
     searchInput: $('searchInput'), exportBtn: $('exportBtn'),
     logoutBtn: $('logoutBtn'), emptyState: $('emptyState'),
     docCrumb: $('docCrumb'), sidebarToggle: $('sidebarToggle'),
+    sidebarBackdrop: $('sidebarBackdrop'),
     themeToggle: $('themeToggle'),
     settingsBtn: $('settingsBtn'), settingsOverlay: $('settingsOverlay'),
     settingsReset: $('settingsReset'), settingsClose: $('settingsClose'),
@@ -111,6 +112,20 @@
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (ignore) { /* 隐私模式下忽略 */ }
   }
 
+  // 移动端抽屉瞬态状态；null 表示未交互（默认收起），桌面端忽略此值
+  var mobileMq = window.matchMedia('(max-width: 680px)');
+  var drawerOpen = null;
+  function syncDrawer() {
+    if (mobileMq.matches) {
+      var open = drawerOpen === true;
+      els.appShell.classList.toggle('sidebar-collapsed', !open);
+      els.sidebarBackdrop.hidden = !open;
+    } else {
+      drawerOpen = null;
+      els.sidebarBackdrop.hidden = true;
+      els.appShell.classList.toggle('sidebar-collapsed', settings.sidebar === 'hidden');
+    }
+  }
   function applySettings() {
     var root = document.documentElement;
     root.dataset.bodyFont = settings.bodyFont;
@@ -118,7 +133,7 @@
     root.style.setProperty('--body-size', String(settings.bodySize));
     root.style.setProperty('--body-line', String(settings.bodyLine));
     root.style.setProperty('--code-size', String(settings.codeSize));
-    els.appShell.classList.toggle('sidebar-collapsed', settings.sidebar === 'hidden');
+    syncDrawer();
     if (!settings.activeLine || els.noteContent.hidden) els.activeLine.hidden = true;
     // 行号 / 语言标签 / 复制按钮变动需要重建预览 DOM（两个容器都重建，与可见性无关）
     if (state.current) {
@@ -203,10 +218,22 @@
   });
 
   els.sidebarToggle.addEventListener('click', function () {
+    if (mobileMq.matches) {
+      drawerOpen = els.appShell.classList.contains('sidebar-collapsed');
+      syncDrawer();
+      return;
+    }
     settings.sidebar = settings.sidebar === 'hidden' ? 'visible' : 'hidden';
     applySettings();
     saveSettings();
   });
+  els.sidebarBackdrop.addEventListener('click', function () {
+    drawerOpen = false;
+    syncDrawer();
+  });
+  function onMobileChange() { syncDrawer(); }
+  if (mobileMq.addEventListener) mobileMq.addEventListener('change', onMobileChange);
+  else if (mobileMq.addListener) mobileMq.addListener(onMobileChange);
   applySettings();
 
   function showAuth() {
@@ -708,6 +735,11 @@
       els.docCrumb.textContent = '我的笔记 / ' + state.current.title;
       renderPreview();
       renderList();
+      // 移动端：选中笔记后自动收起抽屉
+      if (mobileMq.matches && drawerOpen) {
+        drawerOpen = false;
+        syncDrawer();
+      }
       setStatus('saved', '所有更改已保存');
       setMode(state.mode);
       refreshEditorMeta();

@@ -164,6 +164,11 @@ has "$TMP/index" 'settingsOverlay' && pass '偏好设置弹窗元素存在' || f
 has "$TMP/index" 'settingsBtn' && pass '设置入口按钮存在' || fail '设置按钮缺失'
 has "$TMP/index" 'data-panel="fonts"' && pass '设置面板：字体分区存在' || fail '字体面板缺失'
 has "$TMP/index" 'data-seg="codeFont"' && pass '设置面板：代码字体选项存在' || fail '代码字体选项缺失'
+has "$TMP/index" 'sidebarBackdrop' && pass '移动端抽屉遮罩元素存在' || fail '抽屉遮罩缺失'
+grep -q 'max-width: 680px' public/style.css && pass '手机断点(≤680px)存在' || fail '手机断点缺失'
+grep -q 'max-width: 1024px' public/style.css && pass 'Pad 断点(≤1024px)存在' || fail 'Pad 断点缺失'
+grep -q '100dvh' public/style.css && pass '动态视口高度(dvh)已适配' || fail 'dvh 适配缺失'
+grep -q 'hover: none' public/style.css && pass '触屏无 hover 适配存在' || fail '触屏适配缺失'
 curl -s -o /dev/null -w '%{http_code}' "$BASE/vendor/highlight.min.js" > "$TMP/codeHljs"
 curl -s -o /dev/null -w '%{http_code}' "$BASE/vendor/hljs-extra.min.js" > "$TMP/codeExtra"
 [ "$(cat "$TMP/codeHljs")" = '200' ] && [ "$(cat "$TMP/codeExtra")" = '200' ] \
